@@ -23,6 +23,7 @@ import {
 import { apiClient } from '../../services/api-client';
 import { resolveLocation, type ResolvedLocation } from '../../services/location.service';
 import { fetchWeather, type WeatherData } from '../../services/weather.service';
+import { fetchUnreadNotificationCount } from '../../services/notification.service';
 import { useAuth } from '../../features/auth';
 import { borderRadius, fontWeights } from '../../theme';
 import type {
@@ -115,6 +116,7 @@ export const DashboardScreen: React.FC = () => {
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [unreadCount, setUnreadCount] = useState<number>(0);
 
   const [location, setLocation] = useState<ResolvedLocation>({
     latitude: 28.8527,
@@ -359,10 +361,20 @@ export const DashboardScreen: React.FC = () => {
   const refreshUserRef = useRef(refreshUser);
   refreshUserRef.current = refreshUser;
 
-  // Load location and weather on dashboard mount
+  const loadUnreadCount = useCallback(async () => {
+    try {
+      const count = await fetchUnreadNotificationCount();
+      setUnreadCount(count);
+    } catch {
+      // Graceful fallback
+    }
+  }, []);
+
+  // Load location, weather, and unread count on dashboard mount
   useEffect(() => {
     void loadLocationAndWeather(false);
-  }, [loadLocationAndWeather]);
+    void loadUnreadCount();
+  }, [loadLocationAndWeather, loadUnreadCount]);
 
   const handleRefresh = useCallback(async () => {
     setIsRefreshing(true);
@@ -370,16 +382,18 @@ export const DashboardScreen: React.FC = () => {
       refreshUserRef.current(),
       fetchRecentlyAdded(),
       loadLocationAndWeather(true),
+      loadUnreadCount(),
     ]);
     setIsRefreshing(false);
-  }, [fetchRecentlyAdded, loadLocationAndWeather]);
+  }, [fetchRecentlyAdded, loadLocationAndWeather, loadUnreadCount]);
 
-  // Keep user profile data and recently added items in sync whenever returning to Dashboard
+  // Keep user profile data, recently added items, and notifications in sync whenever returning to Dashboard
   useFocusEffect(
     useCallback(() => {
       void refreshUserRef.current();
       void fetchRecentlyAdded();
-    }, [fetchRecentlyAdded]),
+      void loadUnreadCount();
+    }, [fetchRecentlyAdded, loadUnreadCount]),
   );
 
   const handleLogout = async () => {
@@ -495,10 +509,26 @@ export const DashboardScreen: React.FC = () => {
             <TouchableOpacity
               activeOpacity={0.7}
               accessibilityRole="button"
-              accessibilityLabel="Notifications"
+              accessibilityLabel={
+                unreadCount > 0
+                  ? `Notifications, ${unreadCount} unread`
+                  : 'Notifications'
+              }
               style={styles.notificationButton}
+              onPress={() => navigation.navigate('Notifications')}
+              testID="dashboard-notification-bell"
             >
               <Icon name="notifications" size={20} color="#FFFFFF" />
+              {unreadCount > 0 ? (
+                <View
+                  style={styles.notificationBadge}
+                  testID="dashboard-notification-badge"
+                >
+                  <Text style={styles.notificationBadgeText}>
+                    {unreadCount > 9 ? '9+' : unreadCount.toString()}
+                  </Text>
+                </View>
+              ) : null}
             </TouchableOpacity>
 
             <View style={styles.headerDivider} />
@@ -931,6 +961,28 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255, 255, 255, 0.12)',
     alignItems: 'center',
     justifyContent: 'center',
+    position: 'relative',
+  },
+  notificationBadge: {
+    position: 'absolute',
+    top: -2,
+    right: -2,
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: '#EF4444',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 3,
+    borderWidth: 1.5,
+    borderColor: '#047857',
+  },
+  notificationBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: '700',
+    textAlign: 'center',
+    lineHeight: 12,
   },
   headerAvatarButton: {
     padding: 1,

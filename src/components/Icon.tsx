@@ -1,11 +1,14 @@
 import React from 'react';
 import { type StyleProp, type TextStyle } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { colors, iconSizes } from '../theme';
 
 export type IconName =
   | 'dashboard'
   | 'dashboard-active'
+  | 'handshake'
+  | 'bottle'
+  | 'alert-triangle'
   | 'medicines'
   | 'medicines-active'
   | 'mr-registry'
@@ -77,6 +80,9 @@ export type IconName =
   | 'list';
 
 const iconMap: Record<IconName, keyof typeof Ionicons.glyphMap> = {
+  'alert-triangle': 'warning-outline',
+  handshake: 'people-outline',
+  bottle: 'medkit-outline',
   dashboard: 'home-outline',
   'dashboard-active': 'home',
   medicines: 'medkit-outline',
@@ -171,6 +177,30 @@ export const Icon: React.FC<IconProps> = ({
     typeof size === 'number'
       ? size
       : iconSizes[size] ?? iconSizes.md;
+
+  if (name === 'handshake') {
+    return (
+      <MaterialCommunityIcons
+        testID={testID}
+        name="handshake"
+        size={numericSize}
+        color={color}
+        style={style}
+      />
+    );
+  }
+
+  if (name === 'bottle') {
+    return (
+      <MaterialCommunityIcons
+        testID={testID}
+        name="bottle-tonic-plus-outline"
+        size={numericSize}
+        color={color}
+        style={style}
+      />
+    );
+  }
 
   const ioniconName = iconMap[name] ?? 'help-outline';
 

@@ -41,6 +41,7 @@ import {
   EditDealScreen,
 } from '../screens/deals';
 import { MyAccountScreen, EditProfileScreen } from '../screens/account';
+import { NotificationsScreen } from '../screens/notifications';
 import type { RootStackParamList } from '../types/navigation';
 import { TabNavigator } from './TabNavigator';
 
@@ -80,6 +81,7 @@ export const AppNavigator: React.FC = () => {
       <Stack.Screen name="EditDeal" component={EditDealScreen} />
       <Stack.Screen name="MyAccount" component={MyAccountScreen} />
       <Stack.Screen name="EditProfile" component={EditProfileScreen} />
+      <Stack.Screen name="Notifications" component={NotificationsScreen} />
 
       {/* ADMIN-only routes */}
       {isAdmin ? (
