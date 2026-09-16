@@ -1,0 +1,243 @@
+export function formatScheme(scheme: unknown): string {
+  if (!scheme) return 'None';
+  if (typeof scheme === 'string') {
+    const trimmed = scheme.trim();
+    if (!trimmed) return 'None';
+    // If it's a JSON string representing an object (e.g. '{"description":"10+3"}')
+    if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        return formatScheme(parsed);
+      } catch {
+        // Not valid JSON, proceed with string formatting
+      }
+    }
+    return trimmed;
+  }
+  if (typeof scheme === 'object') {
+    const obj = scheme as Record<string, unknown>;
+    if (typeof obj.description === 'string' && obj.description.trim()) {
+      return formatScheme(obj.description.trim());
+    }
+    if (typeof obj.text === 'string' && obj.text.trim()) {
+      return formatScheme(obj.text.trim());
+    }
+    if (typeof obj.scheme === 'string' && obj.scheme.trim()) {
+      return formatScheme(obj.scheme.trim());
+    }
+    if (typeof obj.value === 'string' && obj.value.trim()) {
+      return formatScheme(obj.value.trim());
+    }
+    if (obj.buy !== undefined && obj.free !== undefined) {
+      return `${obj.buy}+${obj.free}`;
+    }
+    if (obj.type !== undefined) {
+      return `Scheme: ${obj.type}`;
+    }
+    try {
+      return JSON.stringify(scheme);
+    } catch {
+      return 'Custom Scheme';
+    }
+  }
+  return String(scheme);
+}
+
+export interface CommercialMetrics {
+  sellingPrice: number;
+  profitPerUnit: number;
+  marginPercent: number;
+  markupPercent: number;
+  isProfit: boolean;
+  effectivePurchaseRate: number;
+  purchaseCost?: number;
+  sellingValue?: number;
+  profit?: number;
+  purchasedQuantity?: number;
+  freeQuantity?: number;
+  sellableQuantity?: number;
+  formattedSellingPrice: string;
+  formattedProfit: string;
+  formattedMargin: string;
+  formattedEffectivePurchaseRate?: string;
+}
+
+/**
+ * Parses scheme formats such as "10+2", "10 + 2", "Buy 10 Get 2 Free", "10+1"
+ * Returns { buy: number, free: number } or null if not applicable.
+ */
+export function parseSchemeQuantities(scheme: unknown): { buy: number; free: number } | null {
+  if (!scheme) return null;
+
+  if (typeof scheme === 'object') {
+    const obj = scheme as Record<string, unknown>;
+    if (typeof obj.buy === 'number' && typeof obj.free === 'number' && obj.buy > 0 && obj.free >= 0) {
+      return { buy: obj.buy, free: obj.free };
+    }
+    if (typeof obj.baseQuantity === 'number' && typeof obj.freeQuantity === 'number' && obj.baseQuantity > 0 && obj.freeQuantity >= 0) {
+      return { buy: obj.baseQuantity, free: obj.freeQuantity };
+    }
+    if (typeof obj.description === 'string') {
+      return parseSchemeQuantities(obj.description);
+    }
+    if (typeof obj.text === 'string') {
+      return parseSchemeQuantities(obj.text);
+    }
+    if (typeof obj.value === 'string') {
+      return parseSchemeQuantities(obj.value);
+    }
+  }
+
+  const str = String(scheme).trim();
+  // Match "10+2", "10 + 2", "10+1"
+  const plusMatch = str.match(/^(\d+)\s*\+\s*(\d+)$/);
+  if (plusMatch && plusMatch[1] && plusMatch[2]) {
+    const buy = parseInt(plusMatch[1], 10);
+    const free = parseInt(plusMatch[2], 10);
+    if (buy > 0) return { buy, free };
+  }
+
+  // Match "Buy 10 Get 2 Free" or "Buy 10 get 2"
+  const buyGetMatch = str.match(/buy\s+(\d+)\s+get\s+(\d+)/i);
+  if (buyGetMatch && buyGetMatch[1] && buyGetMatch[2]) {
+    const buy = parseInt(buyGetMatch[1], 10);
+    const free = parseInt(buyGetMatch[2], 10);
+    if (buy > 0) return { buy, free };
+  }
+
+  return null;
+}
+
+/**
+ * Authoritative Commercial / Margin Calculation:
+ *
+ * Purchase Rate: Supplier purchase rate
+ * Discount: Trade/invoice discount WE RECEIVE from the supplier/MR (reduces purchase cost)
+ * GST: Explicit GST (%) applied to discounted purchase rate
+ * Scheme: e.g. 10+3 (purchased quantity = 10, free quantity = 3, total sellable = 13)
+ *
+ * Step 1: discountedPurchaseRate = purchaseRate * (1 - discountPercent / 100)
+ * Step 2: purchaseRateWithGst = discountedPurchaseRate * (1 + gstPercent / 100)
+ * Step 3: purchaseCost = purchasedQuantity * purchaseRateWithGst
+ * Step 4: sellingValue = sellableQuantity * MRP
+ * Step 5: profit = sellingValue - purchaseCost
+ * Step 6: marginPercent = (profit / sellingValue) * 100
+ */
+export function calculateCommercialMetrics(
+  purchaseRate: number,
+  mrp: number,
+  discountPercent: number,
+  scheme?: unknown,
+  gstPercent: number = 0,
+): CommercialMetrics {
+  const pRate = Number(purchaseRate) || 0;
+  const maxPrice = Number(mrp) || 0;
+  const discount = Number(discountPercent) || 0;
+  const gst = Number(gstPercent) || 0;
+
+  // Step 1: Apply the supplier/trade discount to the purchase rate
+  const discountedPurchaseRate = pRate * (1 - Math.min(Math.max(discount, 0), 100) / 100);
+
+  // Step 2: Apply GST to the discounted purchase rate
+  const purchaseRateWithGst = discountedPurchaseRate * (1 + Math.max(gst, 0) / 100);
+
+  // Scheme handling:
+  // For a 10+3 scheme: purchased = 10, free = 3, sellable = 13
+  // If no scheme: purchased = 1, free = 0, sellable = 1
+  const schemeQuantities = parseSchemeQuantities(scheme);
+  const purchasedQuantity = schemeQuantities && schemeQuantities.buy > 0 ? schemeQuantities.buy : 1;
+  const freeQuantity = schemeQuantities && schemeQuantities.buy > 0 ? schemeQuantities.free : 0;
+  const sellableQuantity = purchasedQuantity + freeQuantity;
+
+  // Step 3: Calculate actual purchase cost (only for paid/purchased quantity)
+  const purchaseCost = purchasedQuantity * purchaseRateWithGst;
+
+  // Step 4: Calculate total selling value using all sellable strips
+  const sellingValue = sellableQuantity * maxPrice;
+
+  // Step 5: Calculate profit
+  const profit = sellingValue - purchaseCost;
+
+  // Step 6: Calculate margin
+  const marginPercent = sellingValue > 0 ? (profit / sellingValue) * 100 : 0;
+
+  // Effective purchase rate per sellable unit
+  const effectivePurchaseRate = sellableQuantity > 0 ? purchaseCost / sellableQuantity : 0;
+  const profitPerUnit = sellableQuantity > 0 ? profit / sellableQuantity : 0;
+
+  const markupPercent = pRate > 0 ? ((maxPrice - pRate) / pRate) * 100 : 0;
+  const isProfit = profit >= 0;
+
+  return {
+    sellingPrice: maxPrice,
+    profitPerUnit,
+    marginPercent,
+    markupPercent,
+    isProfit,
+    effectivePurchaseRate,
+    purchaseCost,
+    sellingValue,
+    profit,
+    purchasedQuantity,
+    freeQuantity,
+    sellableQuantity,
+    formattedSellingPrice: `₹${maxPrice.toFixed(2)}`,
+    formattedProfit: `₹${profitPerUnit.toFixed(2)}`,
+    formattedMargin: `${marginPercent.toFixed(2)}%`,
+    formattedEffectivePurchaseRate: `₹${effectivePurchaseRate.toFixed(2)}`,
+  };
+}
+
+const SHORT_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/**
+ * Formats batch expiry dates into clean, human-readable format:
+ * - "2028-06-01T00:00:00.000Z" -> "01 Jun 2028"
+ * - "2028-06-01" -> "01 Jun 2028"
+ * - "06/28" or "06/2028" -> "Jun 2028"
+ */
+export function formatBatchExpiryDate(rawDate?: unknown): string {
+  if (!rawDate) return '';
+  const dateStr = String(rawDate).trim();
+  if (!dateStr) return '';
+
+  // Match ISO date string or YYYY-MM-DD (optionally followed by T...)
+  const isoMatch = dateStr.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (isoMatch && isoMatch[1] && isoMatch[2] && isoMatch[3]) {
+    const year = isoMatch[1];
+    const monthIdx = parseInt(isoMatch[2], 10) - 1;
+    const day = isoMatch[3].padStart(2, '0');
+    if (monthIdx >= 0 && monthIdx < 12) {
+      return `${day} ${SHORT_MONTHS[monthIdx]} ${year}`;
+    }
+  }
+
+  // Match MM/YYYY or MM/YY
+  const mmyyyyMatch = dateStr.match(/^(\d{1,2})\/(\d{2,4})$/);
+  if (mmyyyyMatch && mmyyyyMatch[1] && mmyyyyMatch[2]) {
+    const monthIdx = parseInt(mmyyyyMatch[1], 10) - 1;
+    let year = mmyyyyMatch[2];
+    if (year.length === 2) {
+      year = `20${year}`;
+    }
+    if (monthIdx >= 0 && monthIdx < 12) {
+      return `${SHORT_MONTHS[monthIdx]} ${year}`;
+    }
+  }
+
+  // Fallback: try parsing with Date
+  try {
+    const d = new Date(dateStr);
+    if (!isNaN(d.getTime())) {
+      const day = String(d.getUTCDate()).padStart(2, '0');
+      const month = SHORT_MONTHS[d.getUTCMonth()];
+      const year = d.getUTCFullYear();
+      return `${day} ${month} ${year}`;
+    }
+  } catch {
+    // Ignore and fallback
+  }
+
+  return dateStr;
+}
+

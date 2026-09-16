@@ -1,0 +1,89 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="100%" height="100%" fill="none">
+  <!-- Medicine Catalogue Reference Brand Logo -->
+  
+  <!-- Outer Circular Ring Frame -->
+  <path
+    d="M 100,18 A 82,82 0 1,0 180,115"
+    stroke="#1A5F45"
+    stroke-width="6.5"
+    stroke-linecap="round"
+    fill="none"
+  />
+  <path
+    d="M 181,85 A 82,82 0 0,0 100,18"
+    stroke="#1A5F45"
+    stroke-width="6.5"
+    stroke-linecap="round"
+    fill="none"
+  />
+
+  <!-- Angled Pharmaceutical Capsule (Center) -->
+  <g transform="rotate(-45 96 96)">
+    <!-- Lower Half (Mint / Clean White Fill) -->
+    <path
+      d="M 75,96 L 75,124 A 21,21 0 0,0 117,124 L 117,96 Z"
+      fill="#EDF7F2"
+    />
+    
+    <!-- Upper Half (Deep Emerald Green Fill) -->
+    <path
+      d="M 75,96 L 75,68 A 21,21 0 0,1 117,68 L 117,96 Z"
+      fill="#1A5F45"
+    />
+
+    <!-- White Glint / Reflection Highlight on Top Section -->
+    <path
+      d="M 83,68 A 13,13 0 0,1 106,56"
+      stroke="#FFFFFF"
+      stroke-width="3.5"
+      stroke-linecap="round"
+      fill="none"
+    />
+
+    <!-- Capsule Outer Border -->
+    <rect
+      x="75"
+      y="47"
+      width="42"
+      height="98"
+      rx="21"
+      stroke="#1A5F45"
+      stroke-width="6.5"
+      stroke-linejoin="round"
+      fill="none"
+    />
+
+    <!-- Central Dividing Seam Line -->
+    <line
+      x1="75"
+      y1="96"
+      x2="117"
+      y2="96"
+      stroke="#1A5F45"
+      stroke-width="5"
+      stroke-linecap="round"
+    />
+  </g>
+
+  <!-- Herbal Green Leaf Element (Bottom Right) -->
+  <g>
+    <!-- Leaf Body -->
+    <path
+      d="M 98,162 C 92,168 84,178 78,180 C 102,188 152,176 186,104 C 182,142 144,180 98,162 Z"
+      fill="#439965"
+    />
+    <path
+      d="M 98,162 C 125,168 168,145 186,104 C 150,118 116,142 98,162 Z"
+      fill="#4FA872"
+    />
+
+    <!-- Center White Leaf Vein -->
+    <path
+      d="M 104,158 C 130,146 160,126 182,108"
+      stroke="#FFFFFF"
+      stroke-width="3.5"
+      stroke-linecap="round"
+      fill="none"
+    />
+  </g>
+</svg>

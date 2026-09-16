@@ -26,12 +26,15 @@ npm-debug.*
 yarn-debug.*
 yarn-error.*
 
-# macOS
+# macOS & system files
 .DS_Store
+Thumbs.db
 *.pem
 
-# local env files
-.env*.local
+# environment files
+.env
+.env.*
+!.env.example
 
 # typescript
 *.tsbuildinfo
