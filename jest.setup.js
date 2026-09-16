@@ -51,3 +51,81 @@ jest.mock('@react-navigation/native', () => {
     },
   };
 });
+
+// Mock expo-location
+jest.mock('expo-location', () => ({
+  Accuracy: {
+    Lowest: 1,
+    Low: 2,
+    Balanced: 3,
+    High: 4,
+    Highest: 5,
+    BestForNavigation: 6,
+  },
+  getForegroundPermissionsAsync: jest.fn().mockResolvedValue({
+    status: 'granted',
+    canAskAgain: true,
+    granted: true,
+    expires: 'never',
+  }),
+  requestForegroundPermissionsAsync: jest.fn().mockResolvedValue({
+    status: 'granted',
+    canAskAgain: true,
+    granted: true,
+    expires: 'never',
+  }),
+  getCurrentPositionAsync: jest.fn().mockResolvedValue({
+    coords: {
+      latitude: 28.6139,
+      longitude: 77.209,
+      altitude: null,
+      accuracy: 10,
+      altitudeAccuracy: null,
+      heading: null,
+      speed: null,
+    },
+    timestamp: Date.now(),
+  }),
+  reverseGeocodeAsync: jest.fn().mockResolvedValue([
+    {
+      city: 'New Delhi',
+      district: 'Central Delhi',
+      street: 'Janpath',
+      region: 'Delhi',
+      subregion: 'New Delhi',
+      country: 'India',
+      postalCode: '110001',
+      name: 'New Delhi',
+      isoCountryCode: 'IN',
+    },
+  ]),
+}));
+
+// Mock open-meteo calls in global fetch
+const originalFetch = global.fetch;
+global.fetch = jest.fn().mockImplementation((url, options) => {
+  if (typeof url === 'string' && url.includes('open-meteo.com')) {
+    return Promise.resolve({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        latitude: 28.61,
+        longitude: 77.21,
+        current: {
+          time: '2026-09-16T12:00',
+          interval: 900,
+          temperature_2m: 28,
+          weather_code: 0,
+        },
+      }),
+    });
+  }
+  if (typeof originalFetch === 'function') {
+    return originalFetch(url, options);
+  }
+  return Promise.resolve({
+    ok: true,
+    status: 200,
+    json: async () => ({}),
+  });
+});

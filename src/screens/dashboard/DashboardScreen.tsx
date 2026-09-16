@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   StyleSheet,
   Text,
@@ -21,6 +21,8 @@ import {
   SectionHeader,
 } from '../../components';
 import { apiClient } from '../../services/api-client';
+import { resolveLocation, type ResolvedLocation } from '../../services/location.service';
+import { fetchWeather, type WeatherData } from '../../services/weather.service';
 import { useAuth } from '../../features/auth';
 import { borderRadius, fontWeights } from '../../theme';
 import type {
@@ -108,8 +110,26 @@ function formatActivityTime(dateStr?: string | null): string {
 export const DashboardScreen: React.FC = () => {
   const { user, logout, isAdmin, refreshUser } = useAuth();
   const navigation = useNavigation<NavigationProp>();
+  const navigationRef = useRef(navigation);
+  navigationRef.current = navigation;
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const [location, setLocation] = useState<ResolvedLocation>({
+    latitude: 28.8527,
+    longitude: 77.0928,
+    locationName: 'New Delhi',
+    isFallback: true,
+  });
+
+  const [weather, setWeather] = useState<WeatherData>({
+    temperature: 28,
+    weatherCode: 0,
+    weatherDescription: 'Clear sky',
+    icon: 'sunny',
+    locationName: 'New Delhi',
+  });
 
   const [recentItems, setRecentItems] = useState<RecentItem[]>([
     {
@@ -209,7 +229,7 @@ export const DashboardScreen: React.FC = () => {
             iconBg: '#FEE2E2',
             iconColor: '#EF4444',
             createdAt: med.createdAt,
-            onPress: () => navigation.navigate('MedicineDetails', { id: med.id }),
+            onPress: () => navigationRef.current.navigate('MedicineDetails', { id: med.id }),
           });
         }
       }
@@ -237,7 +257,7 @@ export const DashboardScreen: React.FC = () => {
             iconColor: '#7C3AED',
             initials,
             createdAt: mr.createdAt,
-            onPress: () => navigation.navigate('MrDetails', { id: mr.id }),
+            onPress: () => navigationRef.current.navigate('MrDetails', { id: mr.id }),
           });
         }
       }
@@ -255,7 +275,7 @@ export const DashboardScreen: React.FC = () => {
             iconBg: '#D1FAE5',
             iconColor: '#059669',
             createdAt: mfg.createdAt,
-            onPress: () => navigation.navigate('Manufacturers'),
+            onPress: () => navigationRef.current.navigate('Manufacturers'),
           });
         }
       }
@@ -317,14 +337,49 @@ export const DashboardScreen: React.FC = () => {
     } catch {
       // Keep existing items if fetch fails
     }
-  }, [navigation]);
+  }, []);
+
+  const loadLocationAndWeather = useCallback(async (force = false) => {
+    try {
+      const resolvedLoc = await resolveLocation();
+      setLocation(resolvedLoc);
+
+      const weatherData = await fetchWeather(
+        resolvedLoc.latitude,
+        resolvedLoc.longitude,
+        resolvedLoc.locationName,
+        force,
+      );
+      setWeather(weatherData);
+    } catch {
+      // Gracefully handled inside the services
+    }
+  }, []);
+
+  const refreshUserRef = useRef(refreshUser);
+  refreshUserRef.current = refreshUser;
+
+  // Load location and weather on dashboard mount
+  useEffect(() => {
+    void loadLocationAndWeather(false);
+  }, [loadLocationAndWeather]);
+
+  const handleRefresh = useCallback(async () => {
+    setIsRefreshing(true);
+    await Promise.allSettled([
+      refreshUserRef.current(),
+      fetchRecentlyAdded(),
+      loadLocationAndWeather(true),
+    ]);
+    setIsRefreshing(false);
+  }, [fetchRecentlyAdded, loadLocationAndWeather]);
 
   // Keep user profile data and recently added items in sync whenever returning to Dashboard
   useFocusEffect(
     useCallback(() => {
-      void refreshUser();
+      void refreshUserRef.current();
       void fetchRecentlyAdded();
-    }, [refreshUser, fetchRecentlyAdded]),
+    }, [fetchRecentlyAdded]),
   );
 
   const handleLogout = async () => {
@@ -426,6 +481,8 @@ export const DashboardScreen: React.FC = () => {
   return (
     <AppScreen
       backgroundColor="#F8FAFC"
+      refreshing={isRefreshing}
+      onRefresh={handleRefresh}
       headerContainerStyle={styles.headerContainer}
       headerProps={{
         title: 'A.P. PHARMACY',
@@ -470,40 +527,86 @@ export const DashboardScreen: React.FC = () => {
       {/* Top Background Curve decoration */}
       <View style={styles.topCurveBackground} />
 
-      {/* 1. Welcome Card matching Reference Image 1 */}
-      <View style={styles.welcomeCard}>
-        {/* Top row: Left greeting, username, badge; Right medicine illustration */}
+      {/* 1. Welcome Card matching Reference Image */}
+      <View style={styles.welcomeCard} testID="dashboard-welcome-card">
+        {/* Top row: Left greeting, username, badge, tagline; Right medicine illustration */}
         <View style={styles.welcomeTopRow}>
           <View style={styles.welcomeLeftCol}>
             <Text style={styles.welcomeGreeting}>Welcome back,</Text>
-            <Text style={styles.welcomeUserName} numberOfLines={1}>
+            <Text style={styles.welcomeUserName} numberOfLines={1} testID="dashboard-welcome-user">
               {user?.name ?? 'admin'}
             </Text>
 
             <View style={styles.roleBadgeContainer}>
-              <Icon name="shield-outline" size={13} color="#1B6A53" />
+              <Icon name="shield-outline" size={11} color="#047857" />
               <Text style={styles.roleBadgeText}>
                 {isAdmin ? 'Administrator' : 'Catalogue Staff'}
               </Text>
             </View>
+
+            <Text style={styles.welcomeTagline}>
+              {'Manage medicines.\nServe better.'}
+            </Text>
           </View>
 
           <View style={styles.welcomeIllustrationCol}>
-            <PharmacyShelfGraphic width={140} height={100} />
+            <PharmacyShelfGraphic width={170} height={114} />
           </View>
         </View>
 
-        {/* Bottom row: Left slogan; Right weather & date */}
-        <View style={styles.welcomeBottomRow}>
-          <Text style={styles.welcomeSlogan}>
-            Manage medicines. Serve better.
-          </Text>
+        {/* Thin horizontal divider line */}
+        <View style={styles.welcomeDivider} />
 
-          <View style={styles.weatherDateRow}>
-            <Icon name="sunny" size={20} color="#EAB308" />
-            <View style={styles.weatherDateCol}>
-              <Text style={styles.weatherDateText}>{todayFormatted}</Text>
-              <Text style={styles.weatherSubtext}>Have a productive day!</Text>
+        {/* Lower information row: 3 columns (Date | Weather | Location) */}
+        <View style={styles.welcomeBottomRow}>
+          {/* Column 1: Date */}
+          <View style={[styles.statusCol, styles.statusColDate]} testID="dashboard-status-date">
+            <View style={styles.statusIconBoxGreen}>
+              <Icon name="calendar" size={14} color="#047857" />
+            </View>
+            <View style={styles.statusTextCol}>
+              <Text style={styles.statusPrimaryText} numberOfLines={1}>
+                {todayFormatted}
+              </Text>
+              <Text style={styles.statusSecondaryText} numberOfLines={1}>
+                Have a productive day!
+              </Text>
+            </View>
+          </View>
+
+          {/* Vertical Divider 1 */}
+          <View style={styles.statusColDivider} />
+
+          {/* Column 2: Weather */}
+          <View style={[styles.statusCol, styles.statusColWeather]} testID="dashboard-status-weather">
+            <View style={styles.statusIconBoxAmber}>
+              <Icon name={weather.icon} size={14} color="#D97706" />
+            </View>
+            <View style={styles.statusTextCol}>
+              <Text style={styles.statusWeatherTempText} numberOfLines={1}>
+                {weather.temperature !== null ? `${weather.temperature}°C` : '--°C'}
+              </Text>
+              <Text style={styles.statusSecondaryText} numberOfLines={1}>
+                {weather.weatherDescription}
+              </Text>
+            </View>
+          </View>
+
+          {/* Vertical Divider 2 */}
+          <View style={styles.statusColDivider} />
+
+          {/* Column 3: Location */}
+          <View style={[styles.statusCol, styles.statusColLocation]} testID="dashboard-status-location">
+            <View style={styles.statusIconBoxGreen}>
+              <Icon name="location" size={14} color="#047857" />
+            </View>
+            <View style={styles.statusTextCol}>
+              <Text style={styles.statusLocationLabel} numberOfLines={1}>
+                Your Location
+              </Text>
+              <Text style={styles.statusLocationText} numberOfLines={1}>
+                {location.locationName}
+              </Text>
             </View>
           </View>
         </View>
@@ -849,95 +952,161 @@ const styles = StyleSheet.create({
   },
   welcomeCard: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 24,
-    paddingTop: 16,
-    paddingBottom: 16,
-    paddingHorizontal: 18,
-    marginBottom: 20,
-    marginTop: 4,
+    borderRadius: 20,
+    paddingTop: 15,
+    paddingBottom: 13,
+    paddingHorizontal: 14,
+    marginBottom: 16,
+    marginTop: 2,
     borderWidth: 1,
-    borderColor: '#E2F0E8',
+    borderColor: '#EDF4F0',
     shadowColor: '#134636',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.07,
-    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
     elevation: 2,
     zIndex: 2,
   },
   welcomeTopRow: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     justifyContent: 'space-between',
   },
   welcomeLeftCol: {
     flex: 1,
-    paddingRight: 4,
+    paddingRight: 6,
   },
   welcomeGreeting: {
-    fontSize: 14.5,
-    color: '#1B6A53',
+    fontSize: 14,
+    color: '#065F46',
     fontWeight: fontWeights.semibold,
-    letterSpacing: -0.2,
+    lineHeight: 18,
+    letterSpacing: -0.1,
   },
   welcomeUserName: {
-    fontSize: 28,
+    fontSize: 25,
     fontWeight: fontWeights.bold,
     color: '#0F172A',
-    marginTop: 1,
-    marginBottom: 8,
-    letterSpacing: -0.5,
+    marginTop: 2,
+    marginBottom: 6,
+    lineHeight: 28,
+    letterSpacing: -0.4,
   },
   roleBadgeContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     alignSelf: 'flex-start',
-    backgroundColor: '#E6F8EF',
-    paddingHorizontal: 10,
-    paddingVertical: 4.5,
+    backgroundColor: '#ECFDF5',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
     borderRadius: borderRadius.full,
     borderWidth: 1,
     borderColor: '#A7F3D0',
-    gap: 5,
+    gap: 4,
+    marginBottom: 6,
   },
   roleBadgeText: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: fontWeights.semibold,
-    color: '#1B6A53',
+    color: '#065F46',
+    lineHeight: 14,
+  },
+  welcomeTagline: {
+    fontSize: 12,
+    fontWeight: fontWeights.medium,
+    color: '#475569',
+    lineHeight: 16,
   },
   welcomeIllustrationCol: {
     alignItems: 'flex-end',
     justifyContent: 'center',
-    marginTop: -8,
+    width: 170,
+  },
+  welcomeDivider: {
+    height: 1,
+    backgroundColor: '#F1F5F9',
+    marginTop: 10,
+    marginBottom: 10,
   },
   welcomeBottomRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginTop: 14,
   },
-  welcomeSlogan: {
-    fontSize: 12,
-    color: '#64748B',
-    fontWeight: fontWeights.medium,
-    flexShrink: 1,
-  },
-  weatherDateRow: {
+  statusCol: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    marginLeft: 8,
+    gap: 5,
   },
-  weatherDateCol: {
+  statusColDate: {
+    flex: 1.38,
+  },
+  statusColWeather: {
+    flex: 0.8,
+  },
+  statusColLocation: {
+    flex: 1.12,
+  },
+  statusIconBoxGreen: {
+    width: 30,
+    height: 30,
+    borderRadius: 8,
+    backgroundColor: '#ECFDF5',
+    alignItems: 'center',
     justifyContent: 'center',
   },
-  weatherDateText: {
-    fontSize: 11,
-    fontWeight: fontWeights.bold,
-    color: '#1E293B',
+  statusIconBoxAmber: {
+    width: 30,
+    height: 30,
+    borderRadius: 8,
+    backgroundColor: '#FEF3C7',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  weatherSubtext: {
-    fontSize: 9.5,
+  statusTextCol: {
+    flex: 1,
+    justifyContent: 'center',
+  },
+  statusPrimaryText: {
+    fontSize: 10.5,
+    fontWeight: fontWeights.bold,
+    color: '#0F172A',
+    letterSpacing: -0.2,
+    lineHeight: 13,
+  },
+  statusSecondaryText: {
+    fontSize: 9,
+    fontWeight: fontWeights.normal,
     color: '#64748B',
+    lineHeight: 11,
+    marginTop: 1.5,
+  },
+  statusWeatherTempText: {
+    fontSize: 12,
+    fontWeight: fontWeights.bold,
+    color: '#0F172A',
+    letterSpacing: -0.2,
+    lineHeight: 14,
+  },
+  statusLocationLabel: {
+    fontSize: 9,
+    fontWeight: fontWeights.normal,
+    color: '#64748B',
+    lineHeight: 11,
+  },
+  statusLocationText: {
+    fontSize: 10.5,
+    fontWeight: fontWeights.bold,
+    color: '#065F46',
+    letterSpacing: -0.2,
+    lineHeight: 13,
+    marginTop: 1.5,
+  },
+  statusColDivider: {
+    width: 1,
+    height: 22,
+    backgroundColor: '#E2E8F0',
+    marginHorizontal: 3,
   },
   sectionHeader: {
     marginTop: 6,

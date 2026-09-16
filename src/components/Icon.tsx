@@ -65,6 +65,13 @@ export type IconName =
   | 'minus'
   | 'notifications'
   | 'sunny'
+  | 'partly-sunny'
+  | 'cloudy'
+  | 'rainy'
+  | 'snow'
+  | 'thunderstorm'
+  | 'location'
+  | 'location-filled'
   | 'leaf'
   | 'arrow-forward'
   | 'list';
@@ -131,6 +138,13 @@ const iconMap: Record<IconName, keyof typeof Ionicons.glyphMap> = {
   minus: 'remove',
   notifications: 'notifications-outline',
   sunny: 'sunny-outline',
+  'partly-sunny': 'partly-sunny-outline',
+  cloudy: 'cloudy-outline',
+  rainy: 'rainy-outline',
+  snow: 'snow-outline',
+  thunderstorm: 'thunderstorm-outline',
+  location: 'location-sharp',
+  'location-filled': 'location',
   leaf: 'leaf-outline',
   'arrow-forward': 'arrow-forward',
   list: 'list-outline',

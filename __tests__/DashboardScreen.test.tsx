@@ -5,17 +5,18 @@ import { storage } from '../src/lib/storage';
 import { DashboardScreen } from '../src/screens/dashboard/DashboardScreen';
 
 const mockNavigate = jest.fn();
+const mockNavInstance = {
+  navigate: mockNavigate,
+  goBack: jest.fn(),
+  dispatch: jest.fn(),
+};
 
 jest.mock('@react-navigation/native', () => {
   const actualNav = jest.requireActual('@react-navigation/native');
   const actualReact = jest.requireActual<typeof React>('react');
   return {
     ...actualNav,
-    useNavigation: () => ({
-      navigate: mockNavigate,
-      goBack: jest.fn(),
-      dispatch: jest.fn(),
-    }),
+    useNavigation: () => mockNavInstance,
     useFocusEffect: (cb: () => void | (() => void)) => {
       actualReact.useEffect(() => {
         const cleanup = cb();
@@ -66,11 +67,17 @@ describe('DashboardScreen Visual & Functional Verification', () => {
     expect(getByText('Medicine Catalogue System')).toBeTruthy();
     expect(getByTestId('dashboard-avatar-button')).toBeTruthy();
 
-    // 2. Welcome Card (shows name & role; no duplicate ADMIN badge in top-right)
+    // 2. Welcome Card (shows name, role, tagline, date, weather, location matching visual reference)
     expect(getByText('Welcome back,')).toBeTruthy();
     expect(getByText('Admin Master')).toBeTruthy();
     expect(getByText('Administrator')).toBeTruthy();
+    expect(getByText('Manage medicines.\nServe better.')).toBeTruthy();
     expect(queryByText('ADMIN')).toBeNull();
+    expect(getByTestId('dashboard-status-date')).toBeTruthy();
+    expect(getByText('Have a productive day!')).toBeTruthy();
+    expect(getByTestId('dashboard-status-weather')).toBeTruthy();
+    expect(getByTestId('dashboard-status-location')).toBeTruthy();
+    expect(getByText('Your Location')).toBeTruthy();
 
     // 3. Quick Actions
     expect(getByText('Quick Actions')).toBeTruthy();

@@ -6,8 +6,25 @@ const TOKEN_KEY = 'medicina_auth_token';
 const USER_KEY = 'medicina_auth_user';
 const LAST_ACTIVE_KEY = 'medicina_last_active';
 const MEDICINE_DRAFT_KEY = 'medicina_add_medicine_draft';
+const SAVED_LOCATION_KEY = 'medicina_saved_location';
+const CACHED_WEATHER_KEY = 'medicina_cached_weather';
 
 export const INACTIVITY_EXPIRY_MS = 24 * 60 * 60 * 1000; // 1 day inactivity rule
+
+export interface SavedLocation {
+  latitude: number;
+  longitude: number;
+  locationName: string;
+  timestamp: number;
+}
+
+export interface CachedWeather {
+  temperature: number | null;
+  weatherCode: number;
+  weatherDescription: string;
+  locationName: string;
+  timestamp: number;
+}
 
 export interface MedicineDraft {
   name: string;
@@ -175,5 +192,43 @@ export const storage = {
 
   async clearMedicineDraft(): Promise<void> {
     await deleteItem(MEDICINE_DRAFT_KEY);
+  },
+
+  async getSavedLocation(): Promise<SavedLocation | null> {
+    const raw = await getItem(SAVED_LOCATION_KEY);
+    if (!raw) return null;
+    try {
+      return JSON.parse(raw) as SavedLocation;
+    } catch {
+      await deleteItem(SAVED_LOCATION_KEY);
+      return null;
+    }
+  },
+
+  async setSavedLocation(location: SavedLocation): Promise<void> {
+    await setItem(SAVED_LOCATION_KEY, JSON.stringify(location));
+  },
+
+  async clearSavedLocation(): Promise<void> {
+    await deleteItem(SAVED_LOCATION_KEY);
+  },
+
+  async getCachedWeather(): Promise<CachedWeather | null> {
+    const raw = await getItem(CACHED_WEATHER_KEY);
+    if (!raw) return null;
+    try {
+      return JSON.parse(raw) as CachedWeather;
+    } catch {
+      await deleteItem(CACHED_WEATHER_KEY);
+      return null;
+    }
+  },
+
+  async setCachedWeather(weather: CachedWeather): Promise<void> {
+    await setItem(CACHED_WEATHER_KEY, JSON.stringify(weather));
+  },
+
+  async clearCachedWeather(): Promise<void> {
+    await deleteItem(CACHED_WEATHER_KEY);
   },
 };
