@@ -464,4 +464,44 @@ export interface UpdateDealPayload {
   notes?: string | null;
 }
 
+export interface AlternativeMedicineSummary {
+  id: string;
+  name: string;
+  form: MedicineForm;
+  packQuantity: number;
+  packUnit: string;
+  compositionText: string;
+  active: boolean;
+}
+
+export interface PublicAlternativeGroup {
+  sourceMedicine: AlternativeMedicineSummary;
+  alternatives: Array<{
+    id: string;
+    medicine: AlternativeMedicineSummary;
+    createdAt: string;
+  }>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface MedicineAlternativeStatus {
+  doNotUse: PublicAlternativeGroup | null;
+  isAlternativeFor: Array<{
+    sourceMedicineId: string;
+    sourceMedicineName: string;
+    sourceForm: MedicineForm;
+    sourceCompositionText: string;
+  }>;
+}
+
+export interface CreateMedicineAlternativePayload {
+  sourceMedicineId: string;
+  alternativeMedicineIds: string[];
+}
+
+export interface UpdateMedicineAlternativePayload {
+  alternativeMedicineIds: string[];
+}
+
 

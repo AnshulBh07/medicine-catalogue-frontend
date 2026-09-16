@@ -12,7 +12,10 @@ export type NotificationType =
   | 'MEDICINE_DELETED'
   | 'MR_CREATED'
   | 'MR_UPDATED'
-  | 'MR_DELETED';
+  | 'MR_DELETED'
+  | 'MEDICINE_ALTERNATIVE_CREATED'
+  | 'MEDICINE_ALTERNATIVE_UPDATED'
+  | 'MEDICINE_ALTERNATIVE_DELETED';
 
 export type NotificationPriority = 'CRITICAL' | 'ATTENTION' | 'UPDATE';
 

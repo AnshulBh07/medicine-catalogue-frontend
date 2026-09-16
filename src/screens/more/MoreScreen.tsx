@@ -68,6 +68,14 @@ export const MoreScreen: React.FC = () => {
           avatarColor="red"
           onPress={() => navigation.navigate('Batches')}
         />
+        <ListItem
+          title="Medicine Alternatives"
+          subtitle="Approved replacements for restricted medicines"
+          avatarIcon="ban"
+          avatarColor="red"
+          onPress={() => navigation.navigate('MedicineAlternatives')}
+          testID="more-menu-medicine-alternatives"
+        />
       </Card>
 
       <SectionHeader title="Account & Preferences" />

@@ -1,4 +1,5 @@
 import type { NavigatorScreenParams } from '@react-navigation/native';
+import type { PublicMedicine } from './models';
 
 export type AuthStackParamList = {
   Login: undefined;
@@ -61,4 +62,6 @@ export type RootStackParamList = {
   MyAccount: undefined;
   EditProfile: undefined;
   Notifications: undefined;
+  MedicineAlternatives: undefined;
+  AddEditAlternative: { sourceMedicineId?: string; initialSourceMedicine?: PublicMedicine } | undefined;
 };

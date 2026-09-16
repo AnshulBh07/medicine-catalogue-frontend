@@ -42,6 +42,8 @@ import {
 } from '../screens/deals';
 import { MyAccountScreen, EditProfileScreen } from '../screens/account';
 import { NotificationsScreen } from '../screens/notifications';
+import { MedicineAlternativesListScreen } from '../screens/medicine-alternatives/MedicineAlternativesListScreen';
+import { AddEditAlternativeScreen } from '../screens/medicine-alternatives/AddEditAlternativeScreen';
 import type { RootStackParamList } from '../types/navigation';
 import { TabNavigator } from './TabNavigator';
 
@@ -82,6 +84,8 @@ export const AppNavigator: React.FC = () => {
       <Stack.Screen name="MyAccount" component={MyAccountScreen} />
       <Stack.Screen name="EditProfile" component={EditProfileScreen} />
       <Stack.Screen name="Notifications" component={NotificationsScreen} />
+      <Stack.Screen name="MedicineAlternatives" component={MedicineAlternativesListScreen} />
+      <Stack.Screen name="AddEditAlternative" component={AddEditAlternativeScreen} />
 
       {/* ADMIN-only routes */}
       {isAdmin ? (

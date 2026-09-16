@@ -21,6 +21,7 @@ import {
 } from '../../components';
 import { useAuth } from '../../features/auth';
 import { apiClient } from '../../services/api-client';
+import { medicineAlternativeService } from '../../services/medicineAlternativeService';
 import {
   borderRadius,
   colors,
@@ -29,7 +30,7 @@ import {
   spacing,
   theme,
 } from '../../theme';
-import type { PublicCommercialDetails, PublicMedicine } from '../../types/models';
+import type { MedicineAlternativeStatus, PublicCommercialDetails, PublicMedicine } from '../../types/models';
 import type { RootStackParamList } from '../../types/navigation';
 import { calculateCommercialMetrics, formatBatchExpiryDate, formatScheme } from '../../utils/commercial.utils';
 import { CommercialDetailsModal } from '../commercial-details/CommercialDetailsModal';
@@ -225,6 +226,7 @@ export const MedicineDetailsScreen: React.FC = () => {
 
   const [medicine, setMedicine] = useState<PublicMedicine | null>(null);
   const [commercialDetails, setCommercialDetails] = useState<PublicCommercialDetails | null>(null);
+  const [alternativeStatus, setAlternativeStatus] = useState<MedicineAlternativeStatus | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isCommercialModalOpen, setIsCommercialModalOpen] = useState(false);
@@ -242,8 +244,15 @@ export const MedicineDetailsScreen: React.FC = () => {
             )
             .catch(() => null)
         : Promise.resolve(null);
+      const alternativePromise = medicineAlternativeService
+        .getByMedicineId(id)
+        .catch(() => null);
 
-      const [medResponse, commResponse] = await Promise.all([medicinePromise, commercialPromise]);
+      const [medResponse, commResponse, altResponse] = await Promise.all([
+        medicinePromise,
+        commercialPromise,
+        alternativePromise,
+      ]);
 
       if (medResponse && medResponse.medicine) {
         setMedicine(medResponse.medicine);
@@ -257,6 +266,12 @@ export const MedicineDetailsScreen: React.FC = () => {
         setCommercialDetails(commResponse.commercialDetails);
       } else {
         setCommercialDetails(null);
+      }
+
+      if (altResponse) {
+        setAlternativeStatus(altResponse);
+      } else {
+        setAlternativeStatus(null);
       }
     } catch {
       // Fallback to sample data if matching ID is available
@@ -355,6 +370,62 @@ export const MedicineDetailsScreen: React.FC = () => {
             </View>
           )}
         </View>
+
+        {/* Medicine Alternative Warnings & Recommendations */}
+        {alternativeStatus?.doNotUse ? (
+          <View style={styles.alternativeWarningCard} testID="medicine-do-not-use-banner">
+            <View style={styles.alternativeWarningHeader}>
+              <View style={styles.altWarningBanBadge}>
+                <Icon name="ban" size={14} color="#EF4444" />
+              </View>
+              <Text style={styles.altWarningTitle}>DO NOT USE — Alternatives Available</Text>
+            </View>
+            <Text style={styles.altWarningText}>
+              This medicine is restricted. Administrators have approved the following replacements:
+            </Text>
+
+            <View style={styles.altReplacementsContainer}>
+              <View style={styles.altReplacementsHeader}>
+                <Icon name="checkmark-circle" size={14} color="#16A34A" />
+                <Text style={styles.altReplacementsLabel}>USE INSTEAD</Text>
+              </View>
+              {alternativeStatus.doNotUse.alternatives.map((alt) => (
+                <TouchableOpacity
+                  key={alt.id}
+                  style={styles.altReplacementItem}
+                  onPress={() => navigation.push('MedicineDetails', { id: alt.medicine.id })}
+                  testID={`replacement-link-${alt.medicine.id}`}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Switch to ${alt.medicine.name}`}
+                >
+                  <View style={styles.altGreenBullet} />
+                  <View style={styles.altItemTextCol}>
+                    <Text style={styles.altItemName}>{alt.medicine.name}</Text>
+                    <Text style={styles.altItemSub}>
+                      {alt.medicine.compositionText} • {alt.medicine.form}
+                    </Text>
+                  </View>
+                  <Icon name="chevron-right" size={14} color="#16A34A" />
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+        ) : null}
+
+        {alternativeStatus?.isAlternativeFor && alternativeStatus.isAlternativeFor.length > 0 ? (
+          <View style={styles.approvedAlternativeBanner} testID="medicine-approved-alternative-banner">
+            <View style={styles.approvedAltHeader}>
+              <Icon name="checkmark-circle" size={16} color="#16A34A" />
+              <Text style={styles.approvedAltTitle}>Approved Alternative</Text>
+            </View>
+            <Text style={styles.approvedAltText}>
+              Designated replacement for:{' '}
+              <Text style={styles.approvedAltNames}>
+                {alternativeStatus.isAlternativeFor.map((item) => item.sourceMedicineName).join(', ')}
+              </Text>
+            </Text>
+          </View>
+        ) : null}
 
         {/* Commercial & Pricing Details (Admin Only) */}
         {isAdmin ? (
@@ -799,5 +870,116 @@ const styles = StyleSheet.create({
     color: colors.primary,
     flex: 1,
     marginLeft: 6,
+  },
+  alternativeWarningCard: {
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1.5,
+    borderColor: '#FECDD3',
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: spacing.md,
+  },
+  alternativeWarningHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 6,
+    gap: 6,
+  },
+  altWarningBanBadge: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: '#FEE2E2',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  altWarningTitle: {
+    fontSize: 13,
+    fontWeight: fontWeights.bold,
+    color: '#DC2626',
+    letterSpacing: 0.3,
+  },
+  altWarningText: {
+    fontSize: 12.5,
+    color: '#475569',
+    lineHeight: 18,
+    marginBottom: 10,
+  },
+  altReplacementsContainer: {
+    backgroundColor: '#F0FDF4',
+    borderWidth: 1,
+    borderColor: '#BBF7D0',
+    borderRadius: 10,
+    padding: 10,
+  },
+  altReplacementsHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    marginBottom: 6,
+  },
+  altReplacementsLabel: {
+    fontSize: 11,
+    fontWeight: fontWeights.bold,
+    color: '#16A34A',
+    letterSpacing: 0.3,
+  },
+  altReplacementItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    marginTop: 6,
+    borderWidth: 1,
+    borderColor: '#DCFCE7',
+  },
+  altGreenBullet: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#16A34A',
+    marginRight: 8,
+  },
+  altItemTextCol: {
+    flex: 1,
+  },
+  altItemName: {
+    fontSize: 13.5,
+    fontWeight: fontWeights.semibold,
+    color: '#111827',
+  },
+  altItemSub: {
+    fontSize: 11.5,
+    color: '#6B7280',
+    marginTop: 1,
+  },
+  approvedAlternativeBanner: {
+    backgroundColor: '#F0FDF4',
+    borderWidth: 1,
+    borderColor: '#BBF7D0',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: spacing.md,
+  },
+  approvedAltHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 4,
+  },
+  approvedAltTitle: {
+    fontSize: 13,
+    fontWeight: fontWeights.bold,
+    color: '#16A34A',
+  },
+  approvedAltText: {
+    fontSize: 12.5,
+    color: '#334155',
+  },
+  approvedAltNames: {
+    fontWeight: fontWeights.bold,
+    color: '#16A34A',
   },
 });

@@ -197,7 +197,18 @@ function getCardConfig(item: NotificationItem): NotificationCardConfig {
     };
   }
 
-  if (item.type === 'MEDICINE_DELETED' || item.type === 'MR_DELETED') {
+  if (item.type === 'MEDICINE_ALTERNATIVE_CREATED' || item.type === 'MEDICINE_ALTERNATIVE_UPDATED') {
+    return {
+      bgColor: '#FFFFFF',
+      borderColor: '#E2E8F0',
+      unreadDotColor: isRead ? '#94A3B8' : '#10B981',
+      iconBg: isRead ? '#F1F5F9' : '#ECFDF5',
+      iconColor: isRead ? '#64748B' : '#059669',
+      iconName: 'sync',
+    };
+  }
+
+  if (item.type === 'MEDICINE_DELETED' || item.type === 'MR_DELETED' || item.type === 'MEDICINE_ALTERNATIVE_DELETED') {
     return {
       bgColor: '#FFFFFF',
       borderColor: '#E2E8F0',
@@ -331,6 +342,11 @@ export const NotificationsScreen: React.FC = () => {
           if (item.entityId) {
             navigation.navigate('MrDetails', { id: item.entityId });
           }
+          return;
+        }
+
+        if (item.entityType === 'MEDICINE_ALTERNATIVE') {
+          navigation.navigate('MedicineAlternatives');
           return;
         }
       } catch {

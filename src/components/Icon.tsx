@@ -77,10 +77,18 @@ export type IconName =
   | 'location-filled'
   | 'leaf'
   | 'arrow-forward'
+  | 'ban'
+  | 'checkmark-circle'
+  | 'ellipsis-vertical'
+  | 'sync'
   | 'list';
 
 const iconMap: Record<IconName, keyof typeof Ionicons.glyphMap> = {
   'alert-triangle': 'warning-outline',
+  ban: 'ban',
+  'checkmark-circle': 'checkmark-circle',
+  'ellipsis-vertical': 'ellipsis-vertical',
+  sync: 'sync-outline',
   handshake: 'people-outline',
   bottle: 'medkit-outline',
   dashboard: 'home-outline',
