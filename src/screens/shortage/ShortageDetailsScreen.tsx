@@ -107,6 +107,7 @@ export const ShortageDetailsScreen: React.FC = () => {
 
   const [showEditQtyModal, setShowEditQtyModal] = useState<boolean>(false);
   const [editQtyValue, setEditQtyValue] = useState<string>('1');
+  const [editCurrentQtyValue, setEditCurrentQtyValue] = useState<string>('');
   const [editUnitValue, setEditUnitValue] = useState<ShortageUnit>('PACK');
   const [editNoteValue, setEditNoteValue] = useState<string>('');
   const [isSavingEdit, setIsSavingEdit] = useState<boolean>(false);
@@ -141,6 +142,9 @@ export const ShortageDetailsScreen: React.FC = () => {
         if (!isMountedRef.current) return;
         setItem(res.shortageItem);
         setEditQtyValue(String(res.shortageItem.quantity));
+        setEditCurrentQtyValue(
+          res.shortageItem.currentQuantity != null ? String(res.shortageItem.currentQuantity) : '',
+        );
         setEditUnitValue(res.shortageItem.unit || 'PACK');
         setEditNoteValue(res.shortageItem.note || '');
       } catch (err) {
@@ -235,13 +239,32 @@ export const ShortageDetailsScreen: React.FC = () => {
       return;
     }
 
+    let numericCurrentQty: number | null = null;
+    if (editCurrentQtyValue.trim()) {
+      const parsed = parseInt(editCurrentQtyValue, 10);
+      if (isNaN(parsed) || parsed <= 0) {
+        Alert.alert('Invalid Quantity', 'Current quantity must be greater than zero.');
+        return;
+      }
+      numericCurrentQty = parsed;
+    }
+
     try {
       setIsSavingEdit(true);
-      const res = await shortageService.patchShortageItem(item.id, {
+      const patchPayload: {
+        quantity: number;
+        currentQuantity?: number | null;
+        unit: ShortageUnit;
+        note: string | null;
+      } = {
         quantity: numericQty,
         unit: editUnitValue,
         note: editNoteValue.trim() || null,
-      });
+      };
+      if (numericCurrentQty !== null) {
+        patchPayload.currentQuantity = numericCurrentQty;
+      }
+      const res = await shortageService.patchShortageItem(item.id, patchPayload);
       setItem(res.shortageItem);
       setShowEditQtyModal(false);
     } catch (err) {
@@ -390,7 +413,15 @@ export const ShortageDetailsScreen: React.FC = () => {
             <View style={styles.topCardInfo}>
               <Text style={styles.topMedName}>{medicine.name}</Text>
               <Text style={styles.topMedManufacturer}>{medicine.manufacturer.name}</Text>
-              <View style={styles.qtyBox}>
+              {item.currentQuantity != null && (
+                <View style={styles.qtyBox} testID="shortage-details-top-current-qty">
+                  <Text style={styles.topQtyLabel}>Current quantity</Text>
+                  <Text style={styles.topCurrentQtyValue}>
+                    {formatShortageQuantity(item.currentQuantity, item.unit)}
+                  </Text>
+                </View>
+              )}
+              <View style={[styles.qtyBox, item.currentQuantity != null && { marginTop: 2 }]}>
                 <Text style={styles.topQtyLabel}>Quantity to order</Text>
                 <Text style={styles.topQtyValue}>
                   {formattedQuantity}
@@ -445,11 +476,27 @@ export const ShortageDetailsScreen: React.FC = () => {
 
             <View style={styles.rowDivider} />
 
-            {/* Quantity */}
-            <View style={styles.infoRow}>
+            {/* Current Quantity */}
+            {item.currentQuantity != null && (
+              <>
+                <View style={styles.infoRow} testID="shortage-details-current-qty-row">
+                  <View style={styles.infoRowLeft}>
+                    <Icon name="cube" size={16} color="#64748B" />
+                    <Text style={styles.infoRowLabel}>Current Quantity</Text>
+                  </View>
+                  <Text style={styles.infoRowValueBold}>
+                    {formatShortageQuantity(item.currentQuantity, item.unit)}
+                  </Text>
+                </View>
+                <View style={styles.rowDivider} />
+              </>
+            )}
+
+            {/* Quantity to Order */}
+            <View style={styles.infoRow} testID="shortage-details-qty-row">
               <View style={styles.infoRowLeft}>
-                <Icon name="cube" size={16} color="#64748B" />
-                <Text style={styles.infoRowLabel}>Quantity</Text>
+                <Icon name="cube" size={16} color="#059669" />
+                <Text style={styles.infoRowLabel}>Quantity to Order</Text>
               </View>
               <Text style={styles.infoRowValueBold}>
                 {formattedQuantity}
@@ -700,8 +747,52 @@ export const ShortageDetailsScreen: React.FC = () => {
               </TouchableOpacity>
             </View>
 
-            {/* Quantity input */}
-            <Text style={styles.editModalLabel}>Quantity</Text>
+            {/* Current Quantity input */}
+            <Text style={styles.editModalLabel}>Current Quantity (Available)</Text>
+            <View style={styles.editQtyInputRow}>
+              <TextInput
+                style={styles.editQtyInput}
+                keyboardType="numeric"
+                value={editCurrentQtyValue}
+                onChangeText={(t) => setEditCurrentQtyValue(t.replace(/[^0-9]/g, ''))}
+                placeholder="e.g. 12"
+                placeholderTextColor="#94A3B8"
+                testID="edit-current-qty-input"
+              />
+              <View style={styles.unitBadge}>
+                <Text style={styles.editQtyUnitText}>
+                  {formatShortageUnit(parseInt(editCurrentQtyValue, 10) || 1, editUnitValue)}
+                </Text>
+              </View>
+            </View>
+
+            {/* Quick Pills for Current Quantity */}
+            <View style={styles.editQuickPillRow}>
+              {QUICK_QUANTITIES.map((q) => (
+                <TouchableOpacity
+                  key={q}
+                  style={[
+                    styles.editQuickPill,
+                    editCurrentQtyValue === String(q) && styles.editQuickPillActive,
+                  ]}
+                  onPress={() => setEditCurrentQtyValue(String(q))}
+                  activeOpacity={0.7}
+                  testID={`edit-current-quick-qty-${q}`}
+                >
+                  <Text
+                    style={[
+                      styles.editQuickPillText,
+                      editCurrentQtyValue === String(q) && styles.editQuickPillTextActive,
+                    ]}
+                  >
+                    {q}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {/* Quantity to Order input */}
+            <Text style={[styles.editModalLabel, { marginTop: 10 }]}>Quantity to Order</Text>
             <View style={styles.editQtyInputRow}>
               <TextInput
                 style={styles.editQtyInput}
@@ -888,6 +979,11 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: fontWeights.bold,
     color: '#059669',
+  },
+  topCurrentQtyValue: {
+    fontSize: 13,
+    fontWeight: fontWeights.bold,
+    color: '#2563EB',
   },
   topCardRight: {
     alignItems: 'flex-end',

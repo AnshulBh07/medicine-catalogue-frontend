@@ -311,6 +311,7 @@ export interface ShortageItem {
   medicineId: string;
   date: string;
   quantity: number;
+  currentQuantity: number | null;
   unit: ShortageUnit;
   status: ShortageStatus;
   note: string | null;
@@ -367,6 +368,7 @@ export interface CreateShortageItemPayload {
   medicineId: string;
   date?: string;
   quantity: number;
+  currentQuantity?: number | null;
   unit?: ShortageUnit;
   note?: string | null;
   status?: ShortageStatus;
@@ -374,6 +376,7 @@ export interface CreateShortageItemPayload {
 
 export interface PatchShortageItemPayload {
   quantity?: number;
+  currentQuantity?: number | null;
   unit?: ShortageUnit;
   status?: ShortageStatus;
   note?: string | null;

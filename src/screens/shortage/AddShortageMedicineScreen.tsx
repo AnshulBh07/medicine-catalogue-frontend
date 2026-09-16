@@ -81,6 +81,7 @@ export const AddShortageMedicineScreen: React.FC = () => {
   const [selectedMedicine, setSelectedMedicine] = useState<PublicMedicine | null>(null);
 
   const [quantity, setQuantity] = useState<string>('1');
+  const [currentQuantity, setCurrentQuantity] = useState<string>('');
   const [selectedUnit, setSelectedUnit] = useState<ShortageUnit>('PACK');
   const [note, setNote] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
@@ -145,6 +146,28 @@ export const AddShortageMedicineScreen: React.FC = () => {
     }
   };
 
+  const handleQuickCurrentQuantity = (qty: number) => {
+    setCurrentQuantity(String(qty));
+  };
+
+  const handleDecrementCurrentQuantity = () => {
+    const current = parseInt(currentQuantity, 10);
+    if (isNaN(current) || current <= 1) {
+      setCurrentQuantity('1');
+    } else {
+      setCurrentQuantity(String(current - 1));
+    }
+  };
+
+  const handleIncrementCurrentQuantity = () => {
+    const current = parseInt(currentQuantity, 10);
+    if (isNaN(current) || current < 1) {
+      setCurrentQuantity('1');
+    } else {
+      setCurrentQuantity(String(current + 1));
+    }
+  };
+
   const handleSubmit = async () => {
     if (isPastDate) {
       setFormError('Shortages cannot be added for past dates.');
@@ -162,6 +185,16 @@ export const AddShortageMedicineScreen: React.FC = () => {
       return;
     }
 
+    let numericCurrentQty: number | undefined = undefined;
+    if (currentQuantity.trim()) {
+      const parsed = parseInt(currentQuantity, 10);
+      if (isNaN(parsed) || parsed <= 0) {
+        setFormError('Please enter a valid current quantity greater than zero.');
+        return;
+      }
+      numericCurrentQty = parsed;
+    }
+
     try {
       setIsSubmitting(true);
       setFormError(null);
@@ -170,6 +203,7 @@ export const AddShortageMedicineScreen: React.FC = () => {
         medicineId: selectedMedicine.id,
         date: targetDate,
         quantity: numericQty,
+        currentQuantity: numericCurrentQty,
         unit: selectedUnit,
         note: note.trim() || null,
       });
@@ -190,6 +224,8 @@ export const AddShortageMedicineScreen: React.FC = () => {
 
   const numericQtyVal = parseInt(quantity, 10) || 1;
   const unitLabel = formatShortageUnit(numericQtyVal, selectedUnit);
+  const numericCurrentQtyVal = parseInt(currentQuantity, 10) || 1;
+  const currentUnitLabel = formatShortageUnit(numericCurrentQtyVal, selectedUnit);
 
   return (
     <AppScreen
@@ -372,12 +408,86 @@ export const AddShortageMedicineScreen: React.FC = () => {
             )}
           </View>
 
-          {/* Section 2: Quantity & Order Unit */}
+          {/* Section 2: Quantities & Order Unit */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Quantity & Order Unit</Text>
+            <Text style={styles.sectionTitle}>Quantities & Order Unit</Text>
 
+            {/* Field 1: Current Quantity */}
             <Card style={styles.quantityCard}>
-              <Text style={styles.inputLabel}>Enter quantity</Text>
+              <Text style={styles.inputLabel}>Current Quantity (Available)</Text>
+              <View style={styles.quantityInputRow}>
+                <TouchableOpacity
+                  style={styles.stepperBtn}
+                  onPress={handleDecrementCurrentQuantity}
+                  activeOpacity={0.7}
+                  accessibilityRole="button"
+                  accessibilityLabel="Decrease current quantity"
+                  testID="shortage-current-qty-decrement"
+                >
+                  <Icon name="minus" size={16} color="#059669" />
+                </TouchableOpacity>
+
+                <View style={styles.quantityIconWrapper}>
+                  <Icon name="cube" size={18} color="#059669" />
+                </View>
+                <TextInput
+                  style={styles.quantityInput}
+                  keyboardType="numeric"
+                  value={currentQuantity}
+                  onChangeText={(text) => setCurrentQuantity(text.replace(/[^0-9]/g, ''))}
+                  placeholder="e.g. 12"
+                  placeholderTextColor="#94A3B8"
+                  testID="add-shortage-current-qty-input"
+                  textAlign="center"
+                />
+
+                <TouchableOpacity
+                  style={styles.stepperBtn}
+                  onPress={handleIncrementCurrentQuantity}
+                  activeOpacity={0.7}
+                  accessibilityRole="button"
+                  accessibilityLabel="Increase current quantity"
+                  testID="shortage-current-qty-increment"
+                >
+                  <Icon name="plus" size={16} color="#059669" />
+                </TouchableOpacity>
+
+                <View style={styles.unitBadge}>
+                  <Text style={styles.quantityUnitText}>{currentUnitLabel}</Text>
+                </View>
+              </View>
+            </Card>
+
+            {/* Quick Pills for Current Quantity */}
+            <View style={styles.quickQtyRow}>
+              {QUICK_QUANTITIES.map((qty) => {
+                const isSelected = currentQuantity === String(qty);
+                return (
+                  <TouchableOpacity
+                    key={qty}
+                    style={[styles.quickQtyPill, isSelected && styles.quickQtyPillActive]}
+                    onPress={() => handleQuickCurrentQuantity(qty)}
+                    activeOpacity={0.7}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Current quantity ${qty}`}
+                    testID={`current-quick-qty-${qty}`}
+                  >
+                    <Text
+                      style={[
+                        styles.quickQtyPillText,
+                        isSelected && styles.quickQtyPillTextActive,
+                      ]}
+                    >
+                      {qty}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            {/* Field 2: Quantity to Order */}
+            <Card style={[styles.quantityCard, { marginTop: 12 }]}>
+              <Text style={styles.inputLabel}>Quantity to Order</Text>
               <View style={styles.quantityInputRow}>
                 <TouchableOpacity
                   style={styles.stepperBtn}

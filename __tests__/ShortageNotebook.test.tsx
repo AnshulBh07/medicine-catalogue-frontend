@@ -74,6 +74,7 @@ describe('Daily Shortage Notebook Mobile Tests', () => {
     medicineId: 'med-001',
     date: '2026-08-31',
     quantity: 10,
+    currentQuantity: null,
     unit: 'PACK',
     status: 'PENDING',
     note: 'Urgent for morning delivery',
@@ -112,6 +113,7 @@ describe('Daily Shortage Notebook Mobile Tests', () => {
     medicineId: 'med-002',
     date: '2026-08-31',
     quantity: 5,
+    currentQuantity: null,
     unit: 'STRIP',
     status: 'ORDERED',
     note: null,
@@ -339,6 +341,7 @@ describe('Daily Shortage Notebook Mobile Tests', () => {
     ];
 
     beforeEach(() => {
+      mockRouteParams = {};
       (shortageService.createShortageItem as jest.Mock).mockImplementation(() =>
         Promise.resolve({
           message: 'Success',
@@ -527,6 +530,88 @@ describe('Daily Shortage Notebook Mobile Tests', () => {
         expect(screen.getByTestId('add-shortage-past-date-banner')).toBeTruthy();
       });
     });
+
+    it('11c. allows entering Current Quantity and Quantity to Order with shared unit', async () => {
+      (shortageService.createShortageItem as jest.Mock).mockResolvedValueOnce({
+        message: 'Success',
+        shortageItem: mockItem1,
+      });
+
+      await render(<AddShortageMedicineScreen />);
+
+      await waitFor(() => {
+        expect(screen.getByTestId('add-shortage-med-med-001')).toBeTruthy();
+        expect(screen.getByTestId('add-shortage-current-qty-input')).toBeTruthy();
+        expect(screen.getByTestId('add-shortage-qty-input')).toBeTruthy();
+      });
+
+      // Select Strip unit
+      await act(async () => {
+        fireEvent.press(screen.getByTestId('unit-chip-strip'));
+      });
+
+      // Enter Current Quantity: 12
+      const currentQtyInput = screen.getByTestId('add-shortage-current-qty-input');
+      await act(async () => {
+        fireEvent.changeText(currentQtyInput, '12');
+      });
+
+      // Enter Quantity to Order: 50
+      const orderQtyInput = screen.getByTestId('add-shortage-qty-input');
+      await act(async () => {
+        fireEvent.changeText(orderQtyInput, '50');
+      });
+
+      // Select medicine
+      await act(async () => {
+        fireEvent.press(screen.getByTestId('add-shortage-med-med-001'));
+      });
+
+      // Submit
+      await act(async () => {
+        fireEvent.press(screen.getByTestId('add-shortage-submit-btn'));
+      });
+
+      expect(shortageService.createShortageItem).toHaveBeenCalledWith(
+        expect.objectContaining({
+          medicineId: 'med-001',
+          currentQuantity: 12,
+          quantity: 50,
+          unit: 'STRIP',
+        }),
+      );
+      expect(mockGoBack).toHaveBeenCalled();
+    });
+
+    it('11d. supports Current Quantity stepper [-] and [+] buttons and quick pills', async () => {
+      await render(<AddShortageMedicineScreen />);
+
+      await waitFor(() => {
+        expect(screen.getByTestId('add-shortage-current-qty-input')).toBeTruthy();
+      });
+
+      const currentQtyInput = screen.getByTestId('add-shortage-current-qty-input');
+      const decBtn = screen.getByTestId('shortage-current-qty-decrement');
+      const incBtn = screen.getByTestId('shortage-current-qty-increment');
+
+      // Tap quick pill 10
+      await act(async () => {
+        fireEvent.press(screen.getByTestId('current-quick-qty-10'));
+      });
+      expect(currentQtyInput.props.value).toBe('10');
+
+      // Increment
+      await act(async () => {
+        fireEvent.press(incBtn);
+      });
+      expect(currentQtyInput.props.value).toBe('11');
+
+      // Decrement
+      await act(async () => {
+        fireEvent.press(decBtn);
+      });
+      expect(currentQtyInput.props.value).toBe('10');
+    });
   });
 
   describe('ShortageDetailsScreen', () => {
@@ -672,6 +757,85 @@ describe('Daily Shortage Notebook Mobile Tests', () => {
       expect(shortageService.patchShortageItem).toHaveBeenCalledWith('shortage-001', {
         quantity: 50,
         unit: 'BOX',
+        note: expect.any(String),
+      });
+    });
+
+    it('16c. displays Current Quantity in overview card and Shortage Information when present', async () => {
+      const itemWithCurrentQty: ShortageItem = {
+        ...mockItem1,
+        currentQuantity: 12,
+        quantity: 50,
+        unit: 'STRIP',
+      };
+
+      (shortageService.getShortageItemById as jest.Mock).mockResolvedValueOnce({
+        shortageItem: itemWithCurrentQty,
+      });
+
+      await render(<ShortageDetailsScreen />);
+
+      await waitFor(() => {
+        expect(screen.getByTestId('shortage-details-top-current-qty')).toBeTruthy();
+        expect(screen.getByTestId('shortage-details-current-qty-row')).toBeTruthy();
+        expect(screen.getByTestId('shortage-details-qty-row')).toBeTruthy();
+        expect(screen.getByText('Current Quantity')).toBeTruthy();
+        expect(screen.getByText('Quantity to Order')).toBeTruthy();
+        expect(screen.getAllByText('12 strips').length).toBeGreaterThanOrEqual(1);
+        expect(screen.getAllByText('50 strips').length).toBeGreaterThanOrEqual(1);
+      });
+    });
+
+    it('16d. opens Edit Quantity modal, modifies Current Quantity, and saves via patch', async () => {
+      const itemWithCurrentQty: ShortageItem = {
+        ...mockItem1,
+        currentQuantity: 12,
+        quantity: 50,
+        unit: 'STRIP',
+      };
+
+      (shortageService.getShortageItemById as jest.Mock).mockResolvedValueOnce({
+        shortageItem: itemWithCurrentQty,
+      });
+
+      (shortageService.patchShortageItem as jest.Mock).mockResolvedValueOnce({
+        message: 'Updated',
+        shortageItem: { ...itemWithCurrentQty, currentQuantity: 15, quantity: 60 },
+      });
+
+      await render(<ShortageDetailsScreen />);
+
+      await waitFor(() => {
+        expect(screen.getByTestId('shortage-details-edit-qty-btn')).toBeTruthy();
+      });
+
+      // Open Edit Qty modal
+      await act(async () => {
+        fireEvent.press(screen.getByTestId('shortage-details-edit-qty-btn'));
+      });
+
+      expect(screen.getByTestId('edit-current-qty-input')).toBeTruthy();
+      expect(screen.getByTestId('edit-qty-input')).toBeTruthy();
+
+      // Change Current Quantity to 15
+      await act(async () => {
+        fireEvent.changeText(screen.getByTestId('edit-current-qty-input'), '15');
+      });
+
+      // Change Quantity to Order to 60
+      await act(async () => {
+        fireEvent.changeText(screen.getByTestId('edit-qty-input'), '60');
+      });
+
+      // Save
+      await act(async () => {
+        fireEvent.press(screen.getByTestId('save-edit-qty-btn'));
+      });
+
+      expect(shortageService.patchShortageItem).toHaveBeenCalledWith('shortage-001', {
+        quantity: 60,
+        currentQuantity: 15,
+        unit: 'STRIP',
         note: expect.any(String),
       });
     });
