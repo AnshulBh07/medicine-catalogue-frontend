@@ -1,8 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Image,
+  Modal,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -10,6 +12,7 @@ import {
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { useNavigation } from '@react-navigation/native';
+import { ocrService } from '../../services/ocrService';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import {
   AppScreen,
@@ -54,6 +57,7 @@ import type {
   PublicSalt,
 } from '../../types/models';
 import type { RootStackParamList } from '../../types/navigation';
+import { MedicineScannerModal } from './MedicineScannerModal';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -408,6 +412,18 @@ export const MedicineForm: React.FC<MedicineFormProps> = ({
   const [gstPercent, setGstPercent] = useState('');
   const [scheme, setScheme] = useState('');
   const [privateNotes, setPrivateNotes] = useState('');
+
+  // Feature 3: Medicine Photo Scanner State
+  const [showScannerModal, setShowScannerModal] = useState(false);
+  const [scannedPhotos, setScannedPhotos] = useState<
+    Array<{ uri: string; base64?: string | null; label: string }>
+  >([]);
+  const [isScanningOcr, setIsScanningOcr] = useState(false);
+  const [scanFeedback, setScanFeedback] = useState<{
+    type: 'success' | 'warning';
+    message: string;
+    conflicts?: string[];
+  } | null>(null);
 
   // Dynamic Autocomplete Recommendations & Loading states
   const [saltRecommendations, setSaltRecommendations] = useState<Record<string, PublicSalt[]>>({});
@@ -1085,6 +1101,193 @@ export const MedicineForm: React.FC<MedicineFormProps> = ({
     setExistingImageUrl(null);
   };
 
+  // Feature 3: Photo Scanner Handlers
+  const handleOpenScanner = () => {
+    setScannedPhotos([]);
+    setShowScannerModal(true);
+  };
+
+  const handleCaptureScannerPhoto = async (source: 'camera' | 'library') => {
+    try {
+      let result: ImagePicker.ImagePickerResult;
+      if (source === 'camera') {
+        const perm = await ImagePicker.requestCameraPermissionsAsync();
+        if (!perm.granted && Platform.OS !== 'web') {
+          setGeneralError('Camera permission is required to photograph medicine packaging.');
+          return;
+        }
+        result = await ImagePicker.launchCameraAsync({
+          quality: 0.8,
+          base64: true,
+          allowsEditing: false,
+        });
+      } else {
+        const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (!perm.granted && Platform.OS !== 'web') {
+          setGeneralError('Gallery permission is required to select packaging photos.');
+          return;
+        }
+        result = await ImagePicker.launchImageLibraryAsync({
+          quality: 0.8,
+          base64: true,
+          allowsEditing: false,
+        });
+      }
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const asset = result.assets[0];
+        const count = scannedPhotos.length;
+        const label =
+          count === 0
+            ? 'Front Packaging'
+            : count === 1
+              ? 'Back / Composition'
+              : 'Side Flap / MRP & Batch';
+
+        setScannedPhotos((prev) => [
+          ...prev,
+          {
+            uri: asset.uri,
+            base64: asset.base64 || null,
+            label,
+          },
+        ]);
+      }
+    } catch (err) {
+      console.warn('Scanner capture error:', err);
+      setGeneralError('Failed to capture photo. Please try again.');
+    }
+  };
+
+  const handleRemoveScannedPhoto = (index: number) => {
+    setScannedPhotos((prev) => prev.filter((_, idx) => idx !== index));
+  };
+
+  const handleProcessScannedPhotos = async () => {
+    if (scannedPhotos.length === 0) return;
+
+    try {
+      setIsScanningOcr(true);
+      const ocrResult = await ocrService.scanMedicinePhotos(scannedPhotos);
+      const ext = ocrResult.extracted;
+
+      markDirty();
+
+      // 1. Medicine Name
+      if (ext.name) {
+        setName(ext.name);
+        if (fieldErrors.name) setFieldErrors((p) => ({ ...p, name: '' }));
+      }
+
+      // 2. Manufacturer
+      if (ext.manufacturer) {
+        setManufacturerName(ext.manufacturer);
+        const match = manufacturers.find(
+          (m) => m.name.toLowerCase() === ext.manufacturer!.toLowerCase(),
+        );
+        if (match) {
+          setManufacturerId(match.id);
+        }
+        if (fieldErrors.manufacturer) setFieldErrors((p) => ({ ...p, manufacturer: '' }));
+      }
+
+      // 3. MRP
+      if (ext.mrp) {
+        setMrp(ext.mrp);
+        if (fieldErrors.mrp) setFieldErrors((p) => ({ ...p, mrp: '' }));
+      }
+
+      // 4. Batch Number
+      if (ext.batchNumber) {
+        setBatchNumber(ext.batchNumber);
+      }
+
+      // 5. Manufacturing Date
+      if (ext.manufacturingDate) {
+        setManufacturingDate(ext.manufacturingDate);
+      }
+
+      // 6. Expiry Date
+      if (ext.expiryDate) {
+        setExpiryDate(ext.expiryDate);
+      }
+
+      // 7. Form
+      if (ext.form) {
+        const matchedForm = MEDICINE_FORM_OPTIONS.find(
+          (o) => o.value === ext.form,
+        );
+        if (matchedForm) {
+          setForm(matchedForm.value);
+        }
+      }
+
+      // 8. Pack Quantity & Pack Unit
+      if (ext.packQuantity) {
+        setPackQuantity(ext.packQuantity);
+      }
+      if (ext.packUnit) {
+        const matchedUnit = PACK_UNIT_OPTIONS.find(
+          (o) => o.value === ext.packUnit,
+        );
+        if (matchedUnit) {
+          setPackUnit(matchedUnit.value);
+        }
+      }
+
+      // 9. Salts
+      if (ext.salts && ext.salts.length > 0) {
+        const newSaltRows: FormSaltRow[] = ext.salts.map((s, idx) => {
+          const matchedMasterSalt = salts.find(
+            (ms) => ms.name.toLowerCase() === s.name.toLowerCase(),
+          );
+          return {
+            id: `salt-row-${idx + 1}`,
+            saltId: matchedMasterSalt ? matchedMasterSalt.id : '',
+            name: matchedMasterSalt ? matchedMasterSalt.name : s.name,
+            amount: s.amount,
+            unit: (s.unit as CompositionSaltUnit) || 'MG',
+          };
+        });
+        setSaltRows(newSaltRows);
+      }
+
+      // 10. Automatically select first photo as packaging preview image if not already selected
+      if (scannedPhotos[0] && !selectedImage) {
+        setSelectedImage({
+          uri: scannedPhotos[0].uri,
+          base64: scannedPhotos[0].base64 || null,
+          mimeType: 'image/jpeg',
+          fileName: `packaging-scan-${Date.now()}.jpg`,
+          fileSize: null,
+          width: null,
+          height: null,
+        });
+      }
+
+      setShowScannerModal(false);
+
+      if (ocrResult.conflicts && ocrResult.conflicts.length > 0) {
+        setScanFeedback({
+          type: 'warning',
+          message: 'Packaging details extracted with potential discrepancies to verify.',
+          conflicts: ocrResult.conflicts.map((c) => c.message),
+        });
+      } else {
+        setScanFeedback({
+          type: 'success',
+          message: `Form successfully populated from ${ocrResult.photosProcessed} packaging ${ocrResult.photosProcessed === 1 ? 'photo' : 'photos'}! Review fields below before saving.`,
+        });
+      }
+    } catch (err) {
+      console.warn('OCR scan processing error:', err);
+      setGeneralError('Failed to process medicine packaging photos. Please enter manually or try again.');
+      setShowScannerModal(false);
+    } finally {
+      setIsScanningOcr(false);
+    }
+  };
+
   // Dynamic Composition Summary Preview
   const compositionSummary = useMemo(() => {
     const valid = saltRows.filter((r) => r.name.trim() && r.amount.trim());
@@ -1512,6 +1715,78 @@ export const MedicineForm: React.FC<MedicineFormProps> = ({
         <View style={styles.successBanner} testID="form-success-banner">
           <Icon name="check" size={20} color="#15803D" />
           <Text style={styles.successBannerText}>{successMessage}</Text>
+        </View>
+      ) : null}
+
+      {/* Feature 3: Scan Medicine / Fill Using Photo Card (Create Mode Only) */}
+      {mode === 'create' ? (
+        <Card style={styles.scanHeroCard} testID="scan-medicine-hero-card">
+          <View style={styles.scanHeroContent}>
+            <View style={styles.scanHeroIconContainer}>
+              <Icon name="camera" size={24} color="#059669" />
+            </View>
+            <View style={styles.scanHeroTextCol}>
+              <Text style={styles.scanHeroTitle}>Scan Medicine / Fill Using Photo</Text>
+              <Text style={styles.scanHeroSubtitle}>
+                Photograph packaging (front, back, side) to autofill name, manufacturer, salts, MRP, batch & dates.
+              </Text>
+            </View>
+          </View>
+          <TouchableOpacity
+            style={styles.scanHeroButton}
+            onPress={handleOpenScanner}
+            testID="btn-scan-medicine"
+            accessibilityRole="button"
+            accessibilityLabel="Scan Medicine / Fill Using Photo"
+          >
+            <Icon name="camera" size={18} color="#FFFFFF" />
+            <Text style={styles.scanHeroButtonText}>Scan Medicine / Fill Using Photo</Text>
+          </TouchableOpacity>
+        </Card>
+      ) : null}
+
+      {/* Scan Feedback Banner (Success / Warnings) */}
+      {scanFeedback ? (
+        <View
+          style={
+            scanFeedback.type === 'warning'
+              ? styles.scanWarningBanner
+              : styles.scanSuccessBanner
+          }
+          testID="scan-feedback-banner"
+        >
+          <Icon
+            name={scanFeedback.type === 'warning' ? 'warning' : 'checkmark-circle'}
+            size={20}
+            color={scanFeedback.type === 'warning' ? '#D97706' : '#059669'}
+          />
+          <View style={styles.scanFeedbackTextCol}>
+            <Text
+              style={
+                scanFeedback.type === 'warning'
+                  ? styles.scanWarningBannerText
+                  : styles.scanSuccessBannerText
+              }
+            >
+              {scanFeedback.message}
+            </Text>
+            {scanFeedback.conflicts && scanFeedback.conflicts.length > 0 ? (
+              <View style={styles.conflictsList}>
+                {scanFeedback.conflicts.map((conflict, cIdx) => (
+                  <Text key={cIdx} style={styles.conflictItemText}>
+                    • {conflict}
+                  </Text>
+                ))}
+              </View>
+            ) : null}
+          </View>
+          <TouchableOpacity
+            onPress={() => setScanFeedback(null)}
+            style={styles.dismissScanFeedbackBtn}
+            testID="btn-dismiss-scan-feedback"
+          >
+            <Icon name="close" size={16} color="#6B7280" />
+          </TouchableOpacity>
         </View>
       ) : null}
 
@@ -2267,6 +2542,16 @@ export const MedicineForm: React.FC<MedicineFormProps> = ({
           confirmTestID="confirm-delete-button"
           cancelTestID="cancel-delete-button"
         />
+        {/* Feature 3: Photo Scanner Modal */}
+        <MedicineScannerModal
+          visible={showScannerModal}
+          onClose={() => setShowScannerModal(false)}
+          scannedPhotos={scannedPhotos}
+          isScanningOcr={isScanningOcr}
+          onCapturePhoto={handleCaptureScannerPhoto}
+          onRemovePhoto={handleRemoveScannedPhoto}
+          onProcessPhotos={handleProcessScannedPhotos}
+        />
       </AppScreen>
   );
 };
@@ -2694,5 +2979,103 @@ const styles = StyleSheet.create({
     fontSize: fontSizes.sm,
     fontWeight: fontWeights.semibold,
     color: '#DC2626',
+  },
+  // Feature 3: Scanner Styles
+  scanHeroCard: {
+    backgroundColor: '#ECFDF5',
+    borderColor: '#A7F3D0',
+    borderWidth: 1,
+    borderRadius: borderRadius.lg,
+    padding: spacing.base,
+    marginBottom: spacing.base,
+  },
+  scanHeroContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    marginBottom: spacing.md,
+  },
+  scanHeroIconContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#D1FAE5',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  scanHeroTextCol: {
+    flex: 1,
+  },
+  scanHeroTitle: {
+    fontSize: fontSizes.base,
+    fontWeight: fontWeights.bold,
+    color: '#065F46',
+    marginBottom: 2,
+  },
+  scanHeroSubtitle: {
+    fontSize: fontSizes.xs,
+    color: '#047857',
+    lineHeight: 16,
+  },
+  scanHeroButton: {
+    backgroundColor: '#059669',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs,
+    paddingVertical: 12,
+    paddingHorizontal: spacing.base,
+    borderRadius: borderRadius.md,
+  },
+  scanHeroButtonText: {
+    color: '#FFFFFF',
+    fontSize: fontSizes.sm,
+    fontWeight: fontWeights.bold,
+  },
+  scanSuccessBanner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.sm,
+    backgroundColor: '#F0FDF4',
+    borderWidth: 1,
+    borderColor: '#BBF7D0',
+    borderRadius: borderRadius.md,
+    padding: spacing.md,
+    marginBottom: spacing.base,
+  },
+  scanSuccessBannerText: {
+    fontSize: fontSizes.sm,
+    color: '#15803D',
+    fontWeight: fontWeights.semibold,
+  },
+  scanWarningBanner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.sm,
+    backgroundColor: '#FFFBEB',
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+    borderRadius: borderRadius.md,
+    padding: spacing.md,
+    marginBottom: spacing.base,
+  },
+  scanWarningBannerText: {
+    fontSize: fontSizes.sm,
+    color: '#B45309',
+    fontWeight: fontWeights.bold,
+  },
+  scanFeedbackTextCol: {
+    flex: 1,
+  },
+  dismissScanFeedbackBtn: {
+    padding: 2,
+  },
+  conflictsList: {
+    marginTop: spacing.xs,
+  },
+  conflictItemText: {
+    fontSize: fontSizes.xs,
+    color: '#B45309',
+    lineHeight: 16,
   },
 });

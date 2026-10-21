@@ -194,7 +194,7 @@ export const AttendanceCalendarScreen: React.FC = () => {
         day,
         isCurrentMonth: true,
         dateStr,
-        status: isSunday ? null : status,
+        status,
         isSunday,
       });
     }
@@ -225,28 +225,22 @@ export const AttendanceCalendarScreen: React.FC = () => {
   const selectedDateFormatted = `${selectedDayName}, ${selectedDay} ${MONTH_NAMES[selectedMonth - 1]} ${selectedYear}`;
 
   const selectedRecord = recordsMap.get(selectedDateStr);
-  const isSelectedSunday = selectedDateObj.getUTCDay() === 0;
-  const currentStatus: AttendanceStatus = isSelectedSunday
-    ? 'PRESENT'
-    : selectedRecord
-      ? selectedRecord.status
-      : 'PRESENT';
+  const currentStatus: AttendanceStatus = selectedRecord
+    ? selectedRecord.status
+    : 'PRESENT';
 
   const handleQuickStatusChange = async (newStatus: AttendanceStatus) => {
     if (!userId || isUpdatingStatus) return;
 
     try {
       setIsUpdatingStatus(true);
-      if (newStatus === 'PRESENT') {
-        await attendanceService.resetAttendance(userId, selectedDateStr);
-      } else {
-        await attendanceService.createOrUpdateAttendance({
-          userId,
-          date: selectedDateStr,
-          status: newStatus,
-          notes: selectedRecord?.notes ?? null,
-        });
-      }
+      await attendanceService.createOrUpdateAttendance({
+        userId,
+        date: selectedDateStr,
+        status: newStatus,
+        workUnits: newStatus === 'PRESENT' ? 2 : newStatus === 'HALF_DAY' ? 1 : 0,
+        notes: selectedRecord?.notes ?? null,
+      });
       await fetchAttendance();
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to update attendance status';
@@ -264,7 +258,9 @@ export const AttendanceCalendarScreen: React.FC = () => {
       userName: attendanceData.user.name,
       userRole: attendanceData.user.role,
       monthlySalary: attendanceData.user.monthlySalary,
+      shiftType: attendanceData.user.shiftType,
       initialStatus: currentStatus,
+      initialWorkUnits: selectedRecord?.workUnits ?? null,
       initialNotes: selectedRecord?.notes ?? null,
       year: selectedYear,
       month: selectedMonth,
@@ -432,9 +428,7 @@ export const AttendanceCalendarScreen: React.FC = () => {
                 isCurrentMonthNow && cell.day === today.getDate();
 
               let dotColor = '#10B981';
-              if (cell.isSunday) {
-                dotColor = '#94A3B8';
-              } else if (cell.status === 'ABSENT') {
+              if (cell.status === 'ABSENT') {
                 dotColor = '#EF4444';
               } else if (cell.status === 'HALF_DAY') {
                 dotColor = '#F59E0B';
@@ -453,29 +447,24 @@ export const AttendanceCalendarScreen: React.FC = () => {
                   onPress={() => setSelectedDay(cell.day)}
                   activeOpacity={0.7}
                   accessibilityRole="button"
-                  accessibilityLabel={`${cell.day} ${monthName}, status ${cell.status ?? 'off'}`}
+                  accessibilityLabel={`${cell.day} ${monthName}, status ${cell.status ?? 'PRESENT'}`}
                   testID={`calendar-day-${cell.day}`}
                 >
                   <Text
                     style={[
                       styles.dateText,
                       isSelected ? styles.dateTextSelected : null,
-                      cell.isSunday && !isSelected ? styles.dateTextSunday : null,
                     ]}
                   >
                     {cell.day}
                   </Text>
-                  {!cell.isSunday ? (
-                    <View
-                      style={[
-                        styles.calendarDot,
-                        { backgroundColor: dotColor },
-                        isSelected ? styles.calendarDotSelected : null,
-                      ]}
-                    />
-                  ) : (
-                    <View style={styles.calendarDotEmpty} />
-                  )}
+                  <View
+                    style={[
+                      styles.calendarDot,
+                      { backgroundColor: dotColor },
+                      isSelected ? styles.calendarDotSelected : null,
+                    ]}
+                  />
                 </TouchableOpacity>
               );
             })}

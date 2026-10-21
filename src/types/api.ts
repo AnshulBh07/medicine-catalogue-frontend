@@ -34,6 +34,18 @@ export interface LoginRequest {
 
 export interface LoginResponse {
   accessToken: string;
+  refreshToken?: string;
+  tokenType: 'Bearer';
+  user: PublicUser;
+}
+
+export interface RefreshRequest {
+  refreshToken: string;
+}
+
+export interface RefreshResponse {
+  accessToken: string;
+  refreshToken: string;
   tokenType: 'Bearer';
   user: PublicUser;
 }

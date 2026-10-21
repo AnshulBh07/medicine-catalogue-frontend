@@ -208,4 +208,114 @@ describe('ApiClient Foundation', () => {
     await apiClient.get('/medicines');
     expect(setLastActiveSpy).toHaveBeenCalled();
   });
+
+  it('refreshes token on 401 and retries the original request with the new access token', async () => {
+    const { storage } = jest.requireActual('../src/lib/storage');
+    jest.spyOn(storage, 'getRefreshToken').mockResolvedValue('valid-refresh-token');
+    const setTokenSpy = jest.spyOn(storage, 'setToken');
+    const setRefreshSpy = jest.spyOn(storage, 'setRefreshToken');
+
+    apiClient.setToken('expired-access-token');
+
+    let requestCount = 0;
+    const mockFetch = jest.fn().mockImplementation((url: string, options?: RequestInit) => {
+      requestCount++;
+      if (url.includes('/auth/refresh')) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          headers: { get: () => 'application/json' },
+          json: () =>
+            Promise.resolve({
+              accessToken: 'new-rotated-access-token',
+              refreshToken: 'new-rotated-refresh-token',
+            }),
+        });
+      }
+
+      if (requestCount === 1) {
+        // Initial request returns 401
+        return Promise.resolve({
+          ok: false,
+          status: 401,
+          headers: { get: () => 'application/json' },
+          json: () => Promise.resolve({ error: { code: 'UNAUTHENTICATED', message: 'Token expired' } }),
+        });
+      }
+
+      // Retried request should have new token in header
+      const authHeader = (options?.headers as Record<string, string>)?.Authorization;
+      expect(authHeader).toBe('Bearer new-rotated-access-token');
+
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        headers: { get: () => 'application/json' },
+        json: () => Promise.resolve({ medicines: [{ id: 'med-1' }] }),
+      });
+    });
+    global.fetch = mockFetch as unknown as typeof fetch;
+
+    const result = await apiClient.get<{ medicines: unknown[] }>('/medicines');
+
+    expect(result).toEqual({ medicines: [{ id: 'med-1' }] });
+    expect(setTokenSpy).toHaveBeenCalledWith('new-rotated-access-token');
+    expect(setRefreshSpy).toHaveBeenCalledWith('new-rotated-refresh-token');
+  });
+
+  it('safely handles concurrent requests during token refresh without duplicate refresh calls', async () => {
+    const { storage } = jest.requireActual('../src/lib/storage');
+    jest.spyOn(storage, 'getRefreshToken').mockResolvedValue('valid-refresh-token');
+
+    apiClient.setToken('stale-access-token');
+
+    let refreshCallCount = 0;
+    let endpointCallCount = 0;
+
+    const mockFetch = jest.fn().mockImplementation((url: string) => {
+      if (url.includes('/auth/refresh')) {
+        refreshCallCount++;
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          headers: { get: () => 'application/json' },
+          json: () =>
+            Promise.resolve({
+              accessToken: 'fresh-concurrent-access-token',
+              refreshToken: 'fresh-concurrent-refresh-token',
+            }),
+        });
+      }
+
+      endpointCallCount++;
+      if (endpointCallCount <= 2) {
+        // Initial concurrent requests fail with 401
+        return Promise.resolve({
+          ok: false,
+          status: 401,
+          headers: { get: () => 'application/json' },
+          json: () => Promise.resolve({ error: { code: 'UNAUTHENTICATED', message: 'Expired' } }),
+        });
+      }
+
+      // Retried requests succeed
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        headers: { get: () => 'application/json' },
+        json: () => Promise.resolve({ success: true }),
+      });
+    });
+    global.fetch = mockFetch as unknown as typeof fetch;
+
+    const [res1, res2] = await Promise.all([
+      apiClient.get('/medicines'),
+      apiClient.get('/deals'),
+    ]);
+
+    expect(res1).toEqual({ success: true });
+    expect(res2).toEqual({ success: true });
+    // Verify only ONE refresh call was made despite multiple concurrent 401s
+    expect(refreshCallCount).toBe(1);
+  });
 });

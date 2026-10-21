@@ -182,31 +182,27 @@ describe('Admin Attendance System Frontend Tests', () => {
 
   describe('AttendanceDashboardScreen', () => {
     it('1. renders summary stats, overall attendance, payroll, and employee list for admin', async () => {
-      (apiClient.get as jest.Mock).mockResolvedValue(mockDashboardData);
-
-      render(
+      const { getByText, queryByTestId } = await render(
         <AuthProvider>
           <AttendanceDashboardScreen />
         </AuthProvider>,
       );
 
       await waitFor(() => {
-        expect(screen.getByText('Attendance Dashboard')).toBeTruthy();
-        expect(screen.getByText('Total Employees')).toBeTruthy();
-        expect(screen.getByText('Present Today')).toBeTruthy();
-        expect(screen.getByText('Absent Today')).toBeTruthy();
-        expect(screen.getByText('Amit Patel')).toBeTruthy();
-        expect(screen.getByText('₹75,000')).toBeTruthy();
-        expect(screen.getByText('₹22,596')).toBeTruthy();
+        expect(getByText('Attendance Dashboard')).toBeTruthy();
+        expect(getByText('Total Employees')).toBeTruthy();
+        expect(getByText('Present Today')).toBeTruthy();
+        expect(getByText('Absent Today')).toBeTruthy();
+        expect(getByText('Amit Patel')).toBeTruthy();
+        expect(getByText('₹75,000')).toBeTruthy();
+        expect(getByText('₹22,596')).toBeTruthy();
       });
 
       // Verify redundant top-right calendar icon button is not rendered
-      expect(screen.queryByTestId('dashboard-header-calendar-btn')).toBeNull();
+      expect(queryByTestId('dashboard-header-calendar-btn')).toBeNull();
     });
 
     it('2. navigates to AttendanceCalendar when an employee card is tapped', async () => {
-      (apiClient.get as jest.Mock).mockResolvedValue(mockDashboardData);
-
       render(
         <AuthProvider>
           <AttendanceDashboardScreen />

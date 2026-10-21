@@ -1,4 +1,4 @@
-﻿import { apiClient } from './api-client';
+import { apiClient } from './api-client';
 import type {
   AttendanceDashboardSummary,
   AttendanceRecord,
@@ -10,11 +10,13 @@ export interface CreateOrUpdateAttendancePayload {
   userId: string;
   date: string; // YYYY-MM-DD
   status: AttendanceStatus;
+  workUnits?: number | null;
   notes?: string | null;
 }
 
 export interface PatchAttendancePayload {
   status?: AttendanceStatus;
+  workUnits?: number | null;
   notes?: string | null;
 }
 

@@ -105,6 +105,33 @@ describe('Welcome Panel Location & Weather System', () => {
       expect(result.longitude).toBe(DEFAULT_LOCATION.longitude);
       expect(result.locationName).toBe(DEFAULT_LOCATION.locationName);
     });
+
+    it('does not repeatedly prompt for location permission on startup when status is undetermined or denied', async () => {
+      const requestSpy = jest.spyOn(Location, 'requestForegroundPermissionsAsync');
+
+      // Undetermined with canAskAgain = true
+      (Location.getForegroundPermissionsAsync as jest.Mock).mockResolvedValueOnce({
+        status: 'undetermined',
+        canAskAgain: true,
+      });
+
+      const res1 = await resolveLocation();
+      expect(requestSpy).not.toHaveBeenCalled();
+      expect(res1.isFallback).toBe(true);
+      expect(res1.locationName).toBe(DEFAULT_LOCATION.locationName);
+
+      // Denied with canAskAgain = false
+      (Location.getForegroundPermissionsAsync as jest.Mock).mockResolvedValueOnce({
+        status: 'denied',
+        canAskAgain: false,
+      });
+
+      const res2 = await resolveLocation();
+      expect(requestSpy).not.toHaveBeenCalled();
+      expect(res2.isFallback).toBe(true);
+
+      requestSpy.mockRestore();
+    });
   });
 
   describe('Weather Service & WMO Code Mapping', () => {

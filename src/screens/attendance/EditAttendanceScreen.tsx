@@ -63,13 +63,35 @@ export const EditAttendanceScreen: React.FC = () => {
     userName,
     monthlySalary,
     initialStatus = 'PRESENT',
+    initialWorkUnits,
     initialNotes = '',
   } = route.params;
 
+  const defaultUnits =
+    initialWorkUnits !== undefined && initialWorkUnits !== null
+      ? initialWorkUnits
+      : initialStatus === 'PRESENT'
+        ? 2
+        : initialStatus === 'HALF_DAY'
+          ? 1
+          : 0;
+
   const [selectedStatus, setSelectedStatus] = useState<AttendanceStatus>(initialStatus);
+  const [selectedWorkUnits, setSelectedWorkUnits] = useState<number>(defaultUnits);
   const [notes, setNotes] = useState<string>(initialNotes ?? '');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const handleStatusSelect = (status: AttendanceStatus) => {
+    setSelectedStatus(status);
+    if (status === 'PRESENT') {
+      setSelectedWorkUnits(2);
+    } else if (status === 'HALF_DAY') {
+      setSelectedWorkUnits(1);
+    } else {
+      setSelectedWorkUnits(0);
+    }
+  };
 
   if (!isAdmin) {
     return (
@@ -106,40 +128,47 @@ export const EditAttendanceScreen: React.FC = () => {
         .toUpperCase()
     : 'EM';
 
-  // Status Payable Values for Impact Calculation
-  const getPayableMultiplier = (status: AttendanceStatus): number => {
-    switch (status) {
-      case 'PRESENT':
-        return 1.0;
-      case 'HALF_DAY':
-        return 0.5;
-      case 'ABSENT':
-      case 'LEAVE':
-      default:
-        return 0.0;
-    }
-  };
-
-  const prevMultiplier = getPayableMultiplier(initialStatus);
-  const nextMultiplier = getPayableMultiplier(selectedStatus);
-  const payableDiff = nextMultiplier - prevMultiplier;
+  // Status Payable Values for Impact Calculation (in half-day units: 2 units = 1.0 day)
+  const prevMultiplier =
+    (initialWorkUnits !== undefined && initialWorkUnits !== null
+      ? initialWorkUnits
+      : initialStatus === 'PRESENT'
+        ? 2
+        : initialStatus === 'HALF_DAY'
+          ? 1
+          : 0) / 2;
+  const nextMultiplier = selectedWorkUnits / 2;
+  const payableDiff = Number((nextMultiplier - prevMultiplier).toFixed(2));
 
   const handleSave = async () => {
     try {
       setIsSubmitting(true);
       setError(null);
 
-      if (selectedStatus === 'PRESENT') {
-        // PRESENT is default - reset/delete any exception record
+      // If resetting to standard PRESENT with default units
+      if (selectedStatus === 'PRESENT' && selectedWorkUnits === 2) {
         await attendanceService.resetAttendance(userId, date);
       } else {
-        // Save exception record
-        await attendanceService.createOrUpdateAttendance({
+        const payload: {
+          userId: string;
+          date: string;
+          status: AttendanceStatus;
+          workUnits?: number;
+          notes?: string | null;
+        } = {
           userId,
           date,
           status: selectedStatus,
           notes: notes.trim() ? notes.trim() : null,
-        });
+        };
+
+        const standardUnits =
+          selectedStatus === 'PRESENT' ? 2 : selectedStatus === 'HALF_DAY' ? 1 : 0;
+        if (selectedWorkUnits !== standardUnits) {
+          payload.workUnits = selectedWorkUnits;
+        }
+
+        await attendanceService.createOrUpdateAttendance(payload);
       }
 
       navigation.goBack();
@@ -227,7 +256,7 @@ export const EditAttendanceScreen: React.FC = () => {
                 styles.statusOptionPresent,
                 selectedStatus === 'PRESENT' ? styles.statusOptionSelectedPresent : null,
               ]}
-              onPress={() => setSelectedStatus('PRESENT')}
+              onPress={() => handleStatusSelect('PRESENT')}
               activeOpacity={0.7}
               accessibilityRole="button"
               accessibilityLabel="Select Present status"
@@ -258,7 +287,7 @@ export const EditAttendanceScreen: React.FC = () => {
                 styles.statusOptionAbsent,
                 selectedStatus === 'ABSENT' ? styles.statusOptionSelectedAbsent : null,
               ]}
-              onPress={() => setSelectedStatus('ABSENT')}
+              onPress={() => handleStatusSelect('ABSENT')}
               activeOpacity={0.7}
               accessibilityRole="button"
               accessibilityLabel="Select Absent status"
@@ -289,7 +318,7 @@ export const EditAttendanceScreen: React.FC = () => {
                 styles.statusOptionHalfDay,
                 selectedStatus === 'HALF_DAY' ? styles.statusOptionSelectedHalfDay : null,
               ]}
-              onPress={() => setSelectedStatus('HALF_DAY')}
+              onPress={() => handleStatusSelect('HALF_DAY')}
               activeOpacity={0.7}
               accessibilityRole="button"
               accessibilityLabel="Select Half Day status"
@@ -320,7 +349,7 @@ export const EditAttendanceScreen: React.FC = () => {
                 styles.statusOptionLeave,
                 selectedStatus === 'LEAVE' ? styles.statusOptionSelectedLeave : null,
               ]}
-              onPress={() => setSelectedStatus('LEAVE')}
+              onPress={() => handleStatusSelect('LEAVE')}
               activeOpacity={0.7}
               accessibilityRole="button"
               accessibilityLabel="Select Leave status"
@@ -344,6 +373,118 @@ export const EditAttendanceScreen: React.FC = () => {
               <Text style={styles.statusOptionSub}>Approved leave • 0.0 day payable</Text>
             </TouchableOpacity>
           </View>
+
+          {/* Work Duration / Extra Time Section */}
+          {(selectedStatus === 'PRESENT' || selectedStatus === 'HALF_DAY') && (
+            <View style={{ marginBottom: 16 }}>
+              <Text style={styles.sectionHeading}>Work Duration & Additional Work</Text>
+              <View style={styles.workUnitsRow}>
+                {selectedStatus === 'PRESENT' ? (
+                  <>
+                    <TouchableOpacity
+                      style={[
+                        styles.unitPill,
+                        selectedWorkUnits === 2 ? styles.unitPillActive : null,
+                      ]}
+                      onPress={() => setSelectedWorkUnits(2)}
+                      testID="work-unit-normal-full"
+                    >
+                      <Text
+                        style={[
+                          styles.unitPillText,
+                          selectedWorkUnits === 2 ? styles.unitPillTextActive : null,
+                        ]}
+                      >
+                        Full Day
+                      </Text>
+                      <Text style={styles.unitPillSub}>2 Units • 1.0 Day</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[
+                        styles.unitPill,
+                        selectedWorkUnits === 3 ? styles.unitPillActive : null,
+                      ]}
+                      onPress={() => setSelectedWorkUnits(3)}
+                      testID="work-unit-extra-half"
+                    >
+                      <Text
+                        style={[
+                          styles.unitPillText,
+                          selectedWorkUnits === 3 ? styles.unitPillTextActive : null,
+                        ]}
+                      >
+                        + Half Day Extra
+                      </Text>
+                      <Text style={styles.unitPillSub}>3 Units • 1.5 Days</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[
+                        styles.unitPill,
+                        selectedWorkUnits === 4 ? styles.unitPillActive : null,
+                      ]}
+                      onPress={() => setSelectedWorkUnits(4)}
+                      testID="work-unit-double-shift"
+                    >
+                      <Text
+                        style={[
+                          styles.unitPillText,
+                          selectedWorkUnits === 4 ? styles.unitPillTextActive : null,
+                        ]}
+                      >
+                        Double Shift
+                      </Text>
+                      <Text style={styles.unitPillSub}>4 Units • 2.0 Days</Text>
+                    </TouchableOpacity>
+                  </>
+                ) : (
+                  <>
+                    <TouchableOpacity
+                      style={[
+                        styles.unitPill,
+                        selectedWorkUnits === 1 ? styles.unitPillActive : null,
+                      ]}
+                      onPress={() => setSelectedWorkUnits(1)}
+                      testID="work-unit-normal-half"
+                    >
+                      <Text
+                        style={[
+                          styles.unitPillText,
+                          selectedWorkUnits === 1 ? styles.unitPillTextActive : null,
+                        ]}
+                      >
+                        Half Day
+                      </Text>
+                      <Text style={styles.unitPillSub}>1 Unit • 0.5 Day</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[
+                        styles.unitPill,
+                        selectedWorkUnits === 2 ? styles.unitPillActive : null,
+                      ]}
+                      onPress={() => setSelectedWorkUnits(2)}
+                      testID="work-unit-half-to-full"
+                    >
+                      <Text
+                        style={[
+                          styles.unitPillText,
+                          selectedWorkUnits === 2 ? styles.unitPillTextActive : null,
+                        ]}
+                      >
+                        Full Day (+0.5 Extra)
+                      </Text>
+                      <Text style={styles.unitPillSub}>2 Units • 1.0 Day</Text>
+                    </TouchableOpacity>
+                  </>
+                )}
+              </View>
+              <Text style={styles.overtimeNotice}>
+                Extra time is paid at normal rate (no overtime premium).
+              </Text>
+            </View>
+          )}
 
           {/* Optional Notes Section */}
           <Text style={styles.sectionHeading}>Reason / Notes (Optional)</Text>
@@ -777,5 +918,46 @@ const styles = StyleSheet.create({
     color: '#475569',
     fontSize: fontSizes.sm,
     fontWeight: fontWeights.semibold,
+  },
+  workUnitsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 6,
+  },
+  unitPill: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  unitPillActive: {
+    backgroundColor: '#ECFDF5',
+    borderColor: '#059669',
+  },
+  unitPillText: {
+    fontSize: 12.5,
+    fontWeight: fontWeights.bold,
+    color: '#334155',
+    marginBottom: 2,
+    textAlign: 'center',
+  },
+  unitPillTextActive: {
+    color: '#059669',
+  },
+  unitPillSub: {
+    fontSize: 10,
+    color: '#64748B',
+    textAlign: 'center',
+  },
+  overtimeNotice: {
+    fontSize: 11,
+    color: '#64748B',
+    fontStyle: 'italic',
+    marginTop: 2,
   },
 });

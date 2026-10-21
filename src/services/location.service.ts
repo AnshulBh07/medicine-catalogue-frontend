@@ -48,30 +48,42 @@ function formatGeocodedAddress(address?: Location.LocationGeocodedAddress | null
   return 'New Delhi';
 }
 
+export async function requestLocationPermission(): Promise<boolean> {
+  try {
+    const current = await Location.getForegroundPermissionsAsync();
+    if (current.status === 'granted') {
+      return true;
+    }
+    if (!current.canAskAgain) {
+      return false;
+    }
+    const res = await Location.requestForegroundPermissionsAsync();
+    return res.status === 'granted';
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Resolves location following the strict priority:
- * 1. Fresh device GPS location if permission granted.
+ * 1. Fresh device GPS location if permission already granted (does not repeatedly prompt).
  * 2. Last successfully saved location from local storage.
  * 3. Default fallback: Narela, Delhi (28.8527, 77.0928).
  */
 export async function resolveLocation(): Promise<ResolvedLocation> {
   try {
-    let permissionStatus = 'undetermined';
+    let isPermissionGranted = false;
 
     try {
+      // Check existing permission status without triggering repeated prompts
       const currentPerm = await Location.getForegroundPermissionsAsync();
-      permissionStatus = currentPerm.status;
-
-      if (permissionStatus !== 'granted' && currentPerm.canAskAgain) {
-        const req = await Location.requestForegroundPermissionsAsync();
-        permissionStatus = req.status;
-      }
+      isPermissionGranted = currentPerm.status === 'granted';
     } catch {
       // Permission API unavailable or error in environment
-      permissionStatus = 'denied';
+      isPermissionGranted = false;
     }
 
-    if (permissionStatus === 'granted') {
+    if (isPermissionGranted) {
       try {
         const position = await Location.getCurrentPositionAsync({
           accuracy: Location.Accuracy.Balanced,

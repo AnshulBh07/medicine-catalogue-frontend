@@ -6,6 +6,13 @@ process.env.EXPO_PUBLIC_API_BASE_URL =
 jest.mock('expo-secure-store', () => {
   const store = new Map();
   return {
+    AFTER_FIRST_UNLOCK: 0,
+    AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY: 1,
+    ALWAYS: 2,
+    WHEN_PASSCODE_SET_THIS_DEVICE_ONLY: 3,
+    ALWAYS_THIS_DEVICE_ONLY: 4,
+    WHEN_UNLOCKED: 5,
+    WHEN_UNLOCKED_THIS_DEVICE_ONLY: 6,
     isAvailableAsync: jest.fn().mockResolvedValue(true),
     getItemAsync: jest.fn().mockImplementation((key) => Promise.resolve(store.get(key) || null)),
     setItemAsync: jest.fn().mockImplementation((key, val) => {

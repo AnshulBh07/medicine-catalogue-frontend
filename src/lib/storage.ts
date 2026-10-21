@@ -3,11 +3,16 @@ import { Platform } from 'react-native';
 import type { PublicUser } from '../types/models';
 
 const TOKEN_KEY = 'medicina_auth_token';
+const REFRESH_TOKEN_KEY = 'medicina_auth_refresh_token';
 const USER_KEY = 'medicina_auth_user';
 const LAST_ACTIVE_KEY = 'medicina_last_active';
 const MEDICINE_DRAFT_KEY = 'medicina_add_medicine_draft';
 const SAVED_LOCATION_KEY = 'medicina_saved_location';
 const CACHED_WEATHER_KEY = 'medicina_cached_weather';
+
+const SECURE_STORE_OPTIONS: SecureStore.SecureStoreOptions = {
+  keychainAccessible: SecureStore.AFTER_FIRST_UNLOCK ?? 0,
+};
 
 export const INACTIVITY_EXPIRY_MS = 24 * 60 * 60 * 1000; // 1 day inactivity rule
 
@@ -87,7 +92,7 @@ async function setItem(key: string, value: string): Promise<void> {
   memoryStorage.set(key, value);
   try {
     if (await isSecureStoreAvailable()) {
-      await SecureStore.setItemAsync(key, value);
+      await SecureStore.setItemAsync(key, value, SECURE_STORE_OPTIONS);
     }
   } catch {
     // Fall back to memory storage on native error
@@ -101,7 +106,7 @@ async function getItem(key: string): Promise<string | null> {
   }
   try {
     if (await isSecureStoreAvailable()) {
-      const stored = await SecureStore.getItemAsync(key);
+      const stored = await SecureStore.getItemAsync(key, SECURE_STORE_OPTIONS);
       if (stored !== null) {
         memoryStorage.set(key, stored);
       }
@@ -117,7 +122,7 @@ async function deleteItem(key: string): Promise<void> {
   memoryStorage.delete(key);
   try {
     if (await isSecureStoreAvailable()) {
-      await SecureStore.deleteItemAsync(key);
+      await SecureStore.deleteItemAsync(key, SECURE_STORE_OPTIONS);
     }
   } catch {
     // Fall back to memory storage on native error
@@ -135,6 +140,26 @@ export const storage = {
 
   async deleteToken(): Promise<void> {
     await deleteItem(TOKEN_KEY);
+  },
+
+  async getRefreshToken(): Promise<string | null> {
+    return getItem(REFRESH_TOKEN_KEY);
+  },
+
+  async setRefreshToken(token: string): Promise<void> {
+    await setItem(REFRESH_TOKEN_KEY, token);
+  },
+
+  async deleteRefreshToken(): Promise<void> {
+    await deleteItem(REFRESH_TOKEN_KEY);
+  },
+
+  async setAuthTokens(tokens: { accessToken: string; refreshToken?: string }): Promise<void> {
+    const promises: Promise<void>[] = [setItem(TOKEN_KEY, tokens.accessToken)];
+    if (tokens.refreshToken) {
+      promises.push(setItem(REFRESH_TOKEN_KEY, tokens.refreshToken));
+    }
+    await Promise.all(promises);
   },
 
   async getUser(): Promise<PublicUser | null> {
@@ -170,6 +195,7 @@ export const storage = {
   async clearAuth(): Promise<void> {
     await Promise.all([
       deleteItem(TOKEN_KEY),
+      deleteItem(REFRESH_TOKEN_KEY),
       deleteItem(USER_KEY),
       deleteItem(LAST_ACTIVE_KEY),
     ]);

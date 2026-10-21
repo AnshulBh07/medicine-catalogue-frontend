@@ -1,6 +1,7 @@
 import { ENV } from '../config/env';
 import { storage } from '../lib/storage';
 import type { ApiErrorDetail, ApiErrorResponse } from '../types/api';
+import type { PublicUser } from '../types/models';
 
 export class ApiError extends Error {
   public readonly statusCode: number;
@@ -29,6 +30,36 @@ export interface JwtPayload {
   [key: string]: unknown;
 }
 
+function base64Decode(str: string): string {
+  if (typeof Buffer !== 'undefined') {
+    return Buffer.from(str, 'base64').toString('utf8');
+  }
+  if (typeof atob === 'function') {
+    try {
+      return decodeURIComponent(
+        Array.prototype.map
+          .call(atob(str), (c: string) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
+          .join(''),
+      );
+    } catch {
+      return atob(str);
+    }
+  }
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=';
+  let output = '';
+  const sanitized = String(str).replace(/=+$/, '');
+  for (let bc = 0, bs = 0, buffer: number, idx = 0; (buffer = sanitized.charCodeAt(idx++)); ) {
+    const charIndex = chars.indexOf(String.fromCharCode(buffer));
+    if (~charIndex) {
+      bs = bc % 4 ? bs * 64 + charIndex : charIndex;
+      if (bc++ % 4) {
+        output += String.fromCharCode(255 & (bs >> ((-2 * bc) & 6)));
+      }
+    }
+  }
+  return output;
+}
+
 export function decodeJwtPayload(token: string): JwtPayload | null {
   if (!token || typeof token !== 'string') return null;
   const parts = token.split('.');
@@ -39,12 +70,7 @@ export function decodeJwtPayload(token: string): JwtPayload | null {
     while (base64.length % 4 !== 0) {
       base64 += '=';
     }
-    const jsonStr =
-      typeof atob === 'function'
-        ? atob(base64)
-        : typeof Buffer !== 'undefined'
-          ? Buffer.from(base64, 'base64').toString('utf8')
-          : null;
+    const jsonStr = base64Decode(base64);
     if (!jsonStr) return null;
     return JSON.parse(jsonStr) as JwtPayload;
   } catch {
@@ -73,7 +99,9 @@ class ApiClient {
   private baseUrl: string;
   private currentToken: string | null = null;
   private onUnauthorizedCallback: (() => void) | null = null;
+  private onTokenRefreshedCallback: ((token: string, user: PublicUser | null) => void) | null = null;
   private authVerificationPromise: Promise<boolean> | null = null;
+  private refreshPromise: Promise<string | null> | null = null;
 
   constructor(baseUrl: string) {
     this.baseUrl = baseUrl.replace(/\/$/, '');
@@ -85,6 +113,74 @@ class ApiClient {
 
   public setOnUnauthorized(callback: () => void): void {
     this.onUnauthorizedCallback = callback;
+  }
+
+  public setOnTokenRefreshed(callback: (token: string, user: PublicUser | null) => void): void {
+    this.onTokenRefreshedCallback = callback;
+  }
+
+  public async refreshTokens(): Promise<string | null> {
+    if (this.refreshPromise) {
+      return this.refreshPromise;
+    }
+
+    this.refreshPromise = (async () => {
+      try {
+        const storedRefreshToken = await storage.getRefreshToken();
+        if (!storedRefreshToken) {
+          return null;
+        }
+
+        const response = await fetch(`${this.baseUrl}/auth/refresh`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+          },
+          body: JSON.stringify({ refreshToken: storedRefreshToken }),
+        });
+
+        if (!response.ok) {
+          if (response.status === 401) {
+            await storage.clearAuth();
+            this.setToken(null);
+            if (this.onUnauthorizedCallback) {
+              this.onUnauthorizedCallback();
+            }
+          }
+          return null;
+        }
+
+        const data = (await response.json()) as {
+          accessToken?: string;
+          refreshToken?: string;
+          user?: PublicUser;
+        };
+
+        if (data?.accessToken) {
+          await storage.setToken(data.accessToken);
+          if (data.refreshToken) {
+            await storage.setRefreshToken(data.refreshToken);
+          }
+          if (data.user) {
+            await storage.setUser(data.user);
+          }
+          this.setToken(data.accessToken);
+          if (this.onTokenRefreshedCallback) {
+            this.onTokenRefreshedCallback(data.accessToken, data.user ?? null);
+          }
+          return data.accessToken;
+        }
+        return null;
+      } catch {
+        // Network failure during refresh -> do NOT clear auth credentials
+        return null;
+      } finally {
+        this.refreshPromise = null;
+      }
+    })();
+
+    return this.refreshPromise;
   }
 
   private async verifySession(token: string): Promise<boolean> {
@@ -127,6 +223,7 @@ class ApiClient {
   ): Promise<T> {
     const cleanPath = path.startsWith('/') ? path : `/${path}`;
     const url = `${this.baseUrl}${cleanPath}`;
+    const isAuthEndpoint = cleanPath === '/auth/login' || cleanPath === '/auth/refresh';
 
     const headers: Record<string, string> = {
       Accept: 'application/json',
@@ -138,12 +235,21 @@ class ApiClient {
     }
 
     let token = options?.token ?? this.currentToken;
-    if (!token) {
+    if (!token && !isAuthEndpoint) {
       token = await storage.getToken();
       if (token) {
         this.currentToken = token;
       }
     }
+
+    // Proactively refresh expired token before making the request if not already retrying
+    if (token && !isAuthEndpoint && !options?.isRetry && !options?.skipAuthValidation && isJwtExpired(token, 30)) {
+      const refreshedToken = await this.refreshTokens();
+      if (refreshedToken) {
+        token = refreshedToken;
+      }
+    }
+
     if (token) {
       headers.Authorization = `Bearer ${token}`;
     }
@@ -178,16 +284,26 @@ class ApiClient {
     }
 
     if (!response.ok) {
-      const isAuthEndpoint = cleanPath === '/auth/login';
-
       if (response.status === 401 && !isAuthEndpoint && token && !options?.skipAuthValidation) {
+        // Attempt refresh if not already retrying
+        if (!options?.isRetry) {
+          const refreshedToken = await this.refreshTokens();
+          if (refreshedToken) {
+            return this.request<T>(path, method, body, {
+              ...options,
+              token: refreshedToken,
+              isRetry: true,
+            });
+          }
+        }
+
         if (isJwtExpired(token)) {
-          // Token is definitively expired by its timestamp
+          // Token is definitively expired by its timestamp and refresh failed
           if (this.onUnauthorizedCallback) {
             this.onUnauthorizedCallback();
           }
         } else if (cleanPath === '/users/me') {
-          // If the profile verification endpoint itself returned 401, the server confirmed unauthenticated
+          // Profile verification endpoint returned 401 and refresh was not available/failed
           if (this.onUnauthorizedCallback) {
             this.onUnauthorizedCallback();
           }

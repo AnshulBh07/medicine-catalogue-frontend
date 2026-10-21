@@ -8,6 +8,7 @@ export interface PublicUser {
   role: UserRole;
   profileImageUrl?: string | null;
   monthlySalary?: number | null;
+  shiftType?: 'FULL_DAY' | 'HALF_DAY';
   active: boolean;
   createdAt: string;
   updatedAt: string;
@@ -237,6 +238,7 @@ export interface AttendanceRecord {
   userId: string;
   date: string; // YYYY-MM-DD
   status: AttendanceStatus;
+  workUnits?: number | null;
   notes?: string | null;
   createdAt?: string;
   updatedAt?: string;

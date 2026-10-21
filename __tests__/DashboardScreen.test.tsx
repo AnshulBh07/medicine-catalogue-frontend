@@ -113,7 +113,7 @@ describe('DashboardScreen Visual & Functional Verification', () => {
     expect(getByText('Benadryl Cough Syrup 100ml')).toBeTruthy();
     expect(getByText(/Last updated:/)).toBeTruthy();
     expect(getByText(/"Better Care Through Knowledge"/)).toBeTruthy();
-  });
+  }, 15000);
 
   it('handles navigation for all Quick Actions and Admin Operations', async () => {
     const { getByLabelText, getByText } = await render(

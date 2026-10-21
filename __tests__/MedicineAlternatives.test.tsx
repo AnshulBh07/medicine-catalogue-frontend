@@ -175,7 +175,7 @@ describe('Medicine Alternatives Mobile Tests', () => {
 
   describe('MedicineAlternativesListScreen', () => {
     it('renders the list with DO NOT USE and USE INSTEAD containers for Admin', async () => {
-      render(<MedicineAlternativesListScreen />);
+      await render(<MedicineAlternativesListScreen />);
 
       await waitFor(() => {
         expect(screen.getByText('Medicine Alternatives')).toBeTruthy();
@@ -196,7 +196,7 @@ describe('Medicine Alternatives Mobile Tests', () => {
 
     it('hides "+ Add Alternative" and 3-dots action menu for Employee (non-admin)', async () => {
       mockIsAdmin = false;
-      render(<MedicineAlternativesListScreen />);
+      await render(<MedicineAlternativesListScreen />);
 
       await waitFor(() => {
         expect(screen.getByText('Medicine Alternatives')).toBeTruthy();
@@ -209,7 +209,7 @@ describe('Medicine Alternatives Mobile Tests', () => {
     });
 
     it('filters alternatives in real time using search input', async () => {
-      render(<MedicineAlternativesListScreen />);
+      await render(<MedicineAlternativesListScreen />);
 
       await waitFor(() => {
         expect(screen.getByText('Rantac 150mg')).toBeTruthy();
@@ -231,7 +231,7 @@ describe('Medicine Alternatives Mobile Tests', () => {
     });
 
     it('allows Admin to open action menu and navigate to Edit', async () => {
-      render(<MedicineAlternativesListScreen />);
+      await render(<MedicineAlternativesListScreen />);
 
       await waitFor(() => {
         expect(screen.getByTestId('action-menu-trigger-med-source-1')).toBeTruthy();
@@ -250,7 +250,7 @@ describe('Medicine Alternatives Mobile Tests', () => {
     });
 
     it('allows Admin to open action menu and delete alternatives', async () => {
-      render(<MedicineAlternativesListScreen />);
+      await render(<MedicineAlternativesListScreen />);
 
       await waitFor(() => {
         expect(screen.getByTestId('action-menu-trigger-med-source-1')).toBeTruthy();
@@ -278,7 +278,7 @@ describe('Medicine Alternatives Mobile Tests', () => {
 
   describe('AddEditAlternativeScreen', () => {
     it('creates approved alternatives for selected medicines', async () => {
-      render(<AddEditAlternativeScreen />);
+      await render(<AddEditAlternativeScreen />);
 
       await waitFor(() => {
         expect(screen.getByText('Add Alternative')).toBeTruthy();
@@ -328,7 +328,7 @@ describe('Medicine Alternatives Mobile Tests', () => {
   describe('MedicineDetailsScreen Integration', () => {
     it('displays DO NOT USE warning banner with approved alternatives when viewing restricted medicine', async () => {
       mockRouteParams = { id: 'med-source-1' };
-      render(<MedicineDetailsScreen />);
+      await render(<MedicineDetailsScreen />);
 
       await waitFor(() => {
         expect(screen.getByTestId('medicine-do-not-use-banner')).toBeTruthy();
@@ -356,7 +356,7 @@ describe('Medicine Alternatives Mobile Tests', () => {
         ],
       });
 
-      render(<MedicineDetailsScreen />);
+      await render(<MedicineDetailsScreen />);
 
       await waitFor(() => {
         expect(screen.getByTestId('medicine-approved-alternative-banner')).toBeTruthy();

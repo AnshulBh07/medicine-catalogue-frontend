@@ -42,7 +42,9 @@ export type RootStackParamList = {
     userName: string;
     userRole?: string;
     monthlySalary?: number | null;
+    shiftType?: 'FULL_DAY' | 'HALF_DAY';
     initialStatus?: 'PRESENT' | 'ABSENT' | 'HALF_DAY' | 'LEAVE';
+    initialWorkUnits?: number | null;
     initialNotes?: string | null;
     year?: number;
     month?: number;
