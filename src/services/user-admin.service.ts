@@ -25,6 +25,7 @@ export interface CreateUserPayload {
   password: string;
   role: UserRole;
   monthlySalary?: number | null;
+  shiftType?: 'FULL_DAY' | 'HALF_DAY';
 }
 
 export interface UpdateUserPayload {
@@ -35,6 +36,7 @@ export interface UpdateUserPayload {
   role?: UserRole;
   active?: boolean;
   monthlySalary?: number | null;
+  shiftType?: 'FULL_DAY' | 'HALF_DAY';
 }
 
 export const userAdminService = {

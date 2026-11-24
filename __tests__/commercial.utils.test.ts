@@ -89,14 +89,69 @@ describe('Commercial Metrics & Scheme Utilities', () => {
     it('handles negative or zero prices gracefully without throwing', () => {
       const result = calculateCommercialMetrics(0, 0, 0, null, 0);
       expect(result.marginPercent).toBe(0);
+      expect(result.markupPercent).toBe(0);
       expect(result.isProfit).toBe(true);
+
+      const neg = calculateCommercialMetrics(-100, -150, -10, null, -5);
+      expect(neg.sellingPrice).toBe(0);
+      expect(neg.effectivePurchaseRate).toBe(0);
+      expect(neg.profitPerUnit).toBe(0);
+      expect(neg.markupPercent).toBe(0);
+      expect(neg.marginPercent).toBe(0);
+      expect(neg.formattedProfit).toBe('₹0.00');
+
+      const nonFinite = calculateCommercialMetrics(Infinity, NaN, Infinity, null, -Infinity);
+      expect(nonFinite.sellingPrice).toBe(0);
+      expect(nonFinite.effectivePurchaseRate).toBe(0);
+      expect(nonFinite.markupPercent).toBe(0);
+      expect(nonFinite.marginPercent).toBe(0);
+    });
+
+    it('calculates markupPercent consistently from effectivePurchaseRate across discount, GST, and schemes', () => {
+      // Discount only (10%)
+      const discOnly = calculateCommercialMetrics(100, 120, 10, null, 0);
+      expect(discOnly.effectivePurchaseRate).toBe(90);
+      expect(discOnly.profitPerUnit).toBe(30);
+      expect(discOnly.markupPercent).toBeCloseTo(33.3333, 3);
+      expect(discOnly.marginPercent).toBe(25);
+
+      // GST only (12%)
+      const gstOnly = calculateCommercialMetrics(100, 140, 0, null, 12);
+      expect(gstOnly.effectivePurchaseRate).toBeCloseTo(112, 4);
+      expect(gstOnly.markupPercent).toBeCloseTo(25, 4);
+      expect(gstOnly.marginPercent).toBeCloseTo(20, 4);
+
+      // Equivalent scheme formats produce identical metrics
+      const s1 = calculateCommercialMetrics(100, 150, 10, '10+2', 5);
+      const s2 = calculateCommercialMetrics(100, 150, 10, '10+2 Free', 5);
+      const s3 = calculateCommercialMetrics(100, 150, 10, { scheme: '10+2 Free' }, 5);
+      const s4 = calculateCommercialMetrics(100, 150, 10, '{"description":"10+2"}', 5);
+      const s5 = calculateCommercialMetrics(100, 150, 10, '{"buy":10,"free":2}', 5);
+
+      for (const s of [s2, s3, s4, s5]) {
+        expect(s.purchasedQuantity).toBe(s1.purchasedQuantity);
+        expect(s.freeQuantity).toBe(s1.freeQuantity);
+        expect(s.effectivePurchaseRate).toBeCloseTo(s1.effectivePurchaseRate, 6);
+        expect(s.markupPercent).toBeCloseTo(s1.markupPercent, 6);
+        expect(s.marginPercent).toBeCloseTo(s1.marginPercent, 6);
+        expect(s.formattedProfit).toBe(s1.formattedProfit);
+      }
+
+      // Zero purchase rate -> markupPercent is 0 (never Infinity/NaN)
+      const zeroPurchase = calculateCommercialMetrics(0, 100, 0, null, 0);
+      expect(zeroPurchase.markupPercent).toBe(0);
+      expect(zeroPurchase.marginPercent).toBe(100);
     });
   });
 
   describe('parseSchemeQuantities', () => {
-    it('correctly parses 10+2 and 10 + 3', () => {
+    it('correctly parses 10+2, 10 + 3, 10+2 Free, and JSON-stringified objects', () => {
       expect(parseSchemeQuantities('10+2')).toEqual({ buy: 10, free: 2 });
       expect(parseSchemeQuantities('10 + 3')).toEqual({ buy: 10, free: 3 });
+      expect(parseSchemeQuantities('10+2 Free')).toEqual({ buy: 10, free: 2 });
+      expect(parseSchemeQuantities('{"description":"10+3"}')).toEqual({ buy: 10, free: 3 });
+      expect(parseSchemeQuantities('{"buy":10,"free":2}')).toEqual({ buy: 10, free: 2 });
+      expect(parseSchemeQuantities({ scheme: '9+1' })).toEqual({ buy: 9, free: 1 });
     });
 
     it('correctly parses Buy 10 Get 2 Free', () => {
