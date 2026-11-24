@@ -95,22 +95,12 @@ export const AttendanceDashboardScreen: React.FC = () => {
     }, [fetchSummary, isAdmin]),
   );
 
-  const handlePrevMonth = () => {
-    if (selectedMonth === 1) {
-      setSelectedYear((y) => y - 1);
-      setSelectedMonth(12);
-    } else {
-      setSelectedMonth((m) => m - 1);
-    }
+  const handlePrevYear = () => {
+    setSelectedYear((y) => Math.max(2000, y - 1));
   };
 
-  const handleNextMonth = () => {
-    if (selectedMonth === 12) {
-      setSelectedYear((y) => y + 1);
-      setSelectedMonth(1);
-    } else {
-      setSelectedMonth((m) => m + 1);
-    }
+  const handleNextYear = () => {
+    setSelectedYear((y) => Math.min(2100, y + 1));
   };
 
   const handleSelectMonth = (mIndex: number) => {
@@ -474,13 +464,25 @@ export const AttendanceDashboardScreen: React.FC = () => {
           <Pressable style={styles.modalBackdrop} onPress={() => setShowMonthModal(false)} />
           <View style={styles.modalCard}>
             <View style={styles.modalHeader}>
-              <TouchableOpacity onPress={handlePrevMonth} style={styles.navMonthBtn}>
+              <TouchableOpacity
+                onPress={handlePrevYear}
+                style={styles.navMonthBtn}
+                accessibilityRole="button"
+                accessibilityLabel="Previous year"
+                testID="attendance-year-prev"
+              >
                 <Icon name="chevron-left" size={18} color="#0F172A" />
               </TouchableOpacity>
 
-              <Text style={styles.modalTitle}>{selectedYear}</Text>
+              <Text style={styles.modalTitle} testID="attendance-modal-year">{selectedYear}</Text>
 
-              <TouchableOpacity onPress={handleNextMonth} style={styles.navMonthBtn}>
+              <TouchableOpacity
+                onPress={handleNextYear}
+                style={styles.navMonthBtn}
+                accessibilityRole="button"
+                accessibilityLabel="Next year"
+                testID="attendance-year-next"
+              >
                 <Icon name="chevron-right" size={18} color="#0F172A" />
               </TouchableOpacity>
             </View>

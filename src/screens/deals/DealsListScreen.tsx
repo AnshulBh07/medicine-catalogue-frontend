@@ -448,6 +448,7 @@ export const DealsListScreen: React.FC = () => {
           {deals.map((deal) => {
             const isPending = deal.status === 'PENDING';
             const isReceived = deal.status === 'RECEIVED';
+            const isCancelled = deal.status === 'CANCELLED';
             const effectivePhone = deal.mrPhoneSnapshot || deal.mr.phone;
 
             return (
@@ -477,21 +478,24 @@ export const DealsListScreen: React.FC = () => {
                         styles.statusBadge,
                         isPending && styles.statusBadgePending,
                         isReceived && styles.statusBadgeReceived,
+                        isCancelled && { backgroundColor: '#FEE2E2', borderColor: '#FECACA' },
                       ]}
+                      testID={`deal-status-badge-${deal.id}`}
                     >
                       <Icon
-                        name={isPending ? 'time' : 'check'}
+                        name={isPending ? 'time' : isCancelled ? 'close' : 'check'}
                         size={12}
-                        color={isPending ? '#B45309' : '#15803D'}
+                        color={isPending ? '#B45309' : isCancelled ? '#B91C1C' : '#15803D'}
                       />
                       <Text
                         style={[
                           styles.statusBadgeText,
                           isPending && styles.statusBadgeTextPending,
                           isReceived && styles.statusBadgeTextReceived,
+                          isCancelled && { color: '#B91C1C' },
                         ]}
                       >
-                        {isPending ? 'Pending Delivery' : 'Received'}
+                        {isPending ? 'Pending Delivery' : isCancelled ? 'Cancelled' : 'Received'}
                       </Text>
                     </View>
                   </View>

@@ -375,8 +375,10 @@ class ApiClient {
       options?.timeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS,
     );
 
-    // On successful authenticated response, touch last active time to prevent inactivity logout during active use
-    if (response.ok && token && this.authEpoch === requestEpoch) {
+    // On successful authenticated user-driven response, touch last active time
+    // (exclude background unread-count polling so inactivity expiry is not falsely reset)
+    const isBackgroundPoll = cleanPath === '/notifications/unread-count';
+    if (response.ok && token && !isBackgroundPoll && this.authEpoch === requestEpoch) {
       void storage.setLastActiveTime();
     }
 

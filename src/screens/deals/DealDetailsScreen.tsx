@@ -252,56 +252,68 @@ export const DealDetailsScreen: React.FC = () => {
         <Card
           style={[
             styles.statusBannerCard,
-            isPending ? styles.statusBannerPending : styles.statusBannerReceived,
+            isPending
+              ? styles.statusBannerPending
+              : deal.status === 'CANCELLED'
+                ? { backgroundColor: '#FEF2F2', borderColor: '#FECACA' }
+                : styles.statusBannerReceived,
           ]}
         >
           <View style={styles.statusBannerLeft}>
             <View
               style={[
                 styles.statusIconCircle,
-                isPending ? styles.statusIconCirclePending : styles.statusIconCircleReceived,
+                isPending
+                  ? styles.statusIconCirclePending
+                  : deal.status === 'CANCELLED'
+                    ? { backgroundColor: '#FEE2E2' }
+                    : styles.statusIconCircleReceived,
               ]}
             >
               <Icon
-                name={isPending ? 'time' : 'check'}
+                name={isPending ? 'time' : deal.status === 'CANCELLED' ? 'close' : 'check'}
                 size={20}
-                color={isPending ? '#B45309' : '#15803D'}
+                color={isPending ? '#B45309' : deal.status === 'CANCELLED' ? '#B91C1C' : '#15803D'}
               />
             </View>
             <View style={styles.statusBannerTextCol}>
               <Text
                 style={[
                   styles.statusBannerTitle,
-                  isPending ? styles.statusBannerTitlePending : styles.statusBannerTitleReceived,
+                  isPending
+                    ? styles.statusBannerTitlePending
+                    : deal.status === 'CANCELLED'
+                      ? { color: '#B91C1C' }
+                      : styles.statusBannerTitleReceived,
                 ]}
               >
-                {isPending ? 'Delivery Pending' : 'Medicine Received'}
+                {isPending
+                  ? 'Delivery Pending'
+                  : deal.status === 'CANCELLED'
+                    ? 'Deal Cancelled'
+                    : 'Medicine Received'}
               </Text>
               <Text style={styles.statusBannerSubtitle}>
                 {isPending
                   ? 'Awaiting delivery by representative'
-                  : 'Fulfillment confirmed'}
+                  : deal.status === 'CANCELLED'
+                    ? 'This deal was cancelled'
+                    : 'Fulfillment confirmed'}
               </Text>
             </View>
           </View>
 
-          <TouchableOpacity
-            style={[
-              styles.statusToggleButton,
-              isPending ? styles.statusToggleReceived : styles.statusTogglePending,
-            ]}
-            onPress={handleToggleStatus}
-            activeOpacity={0.8}
-          >
-            <Text
-              style={[
-                styles.statusToggleText,
-                isPending ? styles.statusToggleTextReceived : styles.statusToggleTextPending,
-              ]}
+          {isPending ? (
+            <TouchableOpacity
+              style={[styles.statusToggleButton, styles.statusToggleReceived]}
+              onPress={handleToggleStatus}
+              activeOpacity={0.8}
             >
-              {isPending ? 'Mark Received' : 'Revert'}
-            </Text>
-          </TouchableOpacity>
+              <Text style={[styles.statusToggleText, styles.statusToggleTextReceived]}>
+                Mark Received
+              </Text>
+            </TouchableOpacity>
+          ) : null}
         </Card>
 
         {/* Section 1: Agreed Commercial Settlement (Prominent) */}

@@ -1,5 +1,5 @@
 import React from 'react';
-import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react-native';
+import { cleanup, fireEvent, render, waitFor } from '@testing-library/react-native';
 import { AuthProvider } from '../src/features/auth';
 import { storage } from '../src/lib/storage';
 import { DashboardScreen } from '../src/screens/dashboard/DashboardScreen';

@@ -128,86 +128,16 @@ export const DashboardScreen: React.FC = () => {
   });
 
   const [weather, setWeather] = useState<WeatherData>({
-    temperature: 28,
+    temperature: null,
     weatherCode: 0,
     weatherDescription: 'Clear sky',
     icon: 'sunny',
-    locationName: 'New Delhi',
+    locationName: 'Narela, Delhi',
   });
 
-  const [recentItems, setRecentItems] = useState<RecentItem[]>([
-    {
-      id: 'default-med-1',
-      type: 'medicine',
-      title: 'Becosules Z Capsule',
-      subtitle: 'Multivitamin with Zinc',
-      tag: 'Medicine',
-      tagStyle: 'green',
-      icon: 'medicines',
-      iconBg: '#FEE2E2',
-      iconColor: '#EF4444',
-      createdAt: '2026-01-01T00:00:00.000Z',
-      onPress: () => navigation.navigate('MainTabs', { screen: 'MedicinesTab' }),
-    },
-    {
-      id: 'default-med-2',
-      type: 'medicine',
-      title: 'Ascoril D Plus Syrup 100ml',
-      subtitle: 'Dry Cough Relief Syrup',
-      tag: 'Medicine',
-      tagStyle: 'green',
-      icon: 'medicines',
-      iconBg: '#FEE2E2',
-      iconColor: '#EF4444',
-      createdAt: '2026-01-01T00:00:00.000Z',
-      onPress: () => navigation.navigate('MainTabs', { screen: 'MedicinesTab' }),
-    },
-    {
-      id: 'default-med-3',
-      type: 'medicine',
-      title: 'Benadryl Cough Syrup 100ml',
-      subtitle: 'Antihistamine Cough Formula',
-      tag: 'Medicine',
-      tagStyle: 'green',
-      icon: 'medicines',
-      iconBg: '#FEE2E2',
-      iconColor: '#EF4444',
-      createdAt: '2026-01-01T00:00:00.000Z',
-      onPress: () => navigation.navigate('MainTabs', { screen: 'MedicinesTab' }),
-    },
-  ]);
-
-  const [recentActivities, setRecentActivities] = useState<RecentActivityItem[]>([
-    {
-      id: 'activity-1',
-      icon: 'plus',
-      iconBg: '#E6F7ED',
-      iconColor: '#10B981',
-      title: 'Added new medicine',
-      subtitle: 'Paracetamol 650mg',
-      timestamp: '10:24 AM',
-    },
-    {
-      id: 'activity-2',
-      icon: 'edit',
-      iconBg: '#F3E8FF',
-      iconColor: '#8B5CF6',
-      title: 'Updated composition',
-      subtitle: 'Amoxicillin + Clavulanic Acid',
-      timestamp: 'Yesterday',
-    },
-    {
-      id: 'activity-3',
-      icon: 'document-text',
-      iconBg: '#E0F2FE',
-      iconColor: '#0284C7',
-      title: 'Added manufacturer',
-      subtitle: 'Cipla Ltd.',
-      timestamp: '25 Apr 2025',
-    },
-  ]);
-
-  const [lastUpdatedText, setLastUpdatedText] = useState<string>('Today, 10:36 AM');
+  const [recentItems, setRecentItems] = useState<RecentItem[]>([]);
+  const [recentActivities, setRecentActivities] = useState<RecentActivityItem[]>([]);
+  const [lastUpdatedText, setLastUpdatedText] = useState<string>('Not synced yet');
 
   const fetchRecentlyAdded = useCallback(async () => {
     try {
@@ -719,25 +649,36 @@ export const DashboardScreen: React.FC = () => {
         style={styles.sectionHeader}
       />
       <View style={styles.recentActivityCard}>
-        {recentActivities.map((activity, index) => (
-          <React.Fragment key={activity.id}>
-            {index > 0 && <View style={styles.cardDivider} />}
-            <View style={styles.recentActivityRow}>
-              <View style={[styles.recentActivityIconCircle, { backgroundColor: activity.iconBg }]}>
-                <Icon name={activity.icon} size={16} color={activity.iconColor} />
-              </View>
-              <View style={styles.recentActivityBody}>
-                <Text style={styles.recentActivityTitle} numberOfLines={1}>
-                  {activity.title}
-                </Text>
-                <Text style={styles.recentActivitySubtitle} numberOfLines={1}>
-                  {activity.subtitle}
-                </Text>
-              </View>
-              <Text style={styles.recentActivityTime}>{activity.timestamp}</Text>
+        {recentActivities.length === 0 ? (
+          <View style={styles.recentActivityRow} testID="dashboard-empty-activity">
+            <View style={styles.recentActivityBody}>
+              <Text style={styles.recentActivityTitle}>No recent activity yet</Text>
+              <Text style={styles.recentActivitySubtitle}>
+                Recent catalogue updates will appear here once synced.
+              </Text>
             </View>
-          </React.Fragment>
-        ))}
+          </View>
+        ) : (
+          recentActivities.map((activity, index) => (
+            <React.Fragment key={activity.id}>
+              {index > 0 && <View style={styles.cardDivider} />}
+              <View style={styles.recentActivityRow}>
+                <View style={[styles.recentActivityIconCircle, { backgroundColor: activity.iconBg }]}>
+                  <Icon name={activity.icon} size={16} color={activity.iconColor} />
+                </View>
+                <View style={styles.recentActivityBody}>
+                  <Text style={styles.recentActivityTitle} numberOfLines={1}>
+                    {activity.title}
+                  </Text>
+                  <Text style={styles.recentActivitySubtitle} numberOfLines={1}>
+                    {activity.subtitle}
+                  </Text>
+                </View>
+                <Text style={styles.recentActivityTime}>{activity.timestamp}</Text>
+              </View>
+            </React.Fragment>
+          ))
+        )}
       </View>
 
       {/* 4. Admin Operations Section (Reference 2) */}
@@ -842,22 +783,32 @@ export const DashboardScreen: React.FC = () => {
         style={styles.sectionHeader}
       />
       <View style={styles.recentlyAddedCard}>
-        {recentItems.map((item, index) => (
-          <React.Fragment key={item.id}>
-            {index > 0 && <View style={styles.cardDivider} />}
-            <TouchableOpacity
-              style={styles.recentlyAddedItem}
-              onPress={item.onPress}
-              activeOpacity={0.7}
-            >
-              <View style={[styles.recentlyAddedIconSquare, { backgroundColor: item.iconBg }]}>
-                {item.initials ? (
-                  <Text style={styles.recentInitialsText}>{item.initials}</Text>
-                ) : (
-                  <Icon name={item.icon} size={18} color={item.iconColor} />
-                )}
-              </View>
-              <View style={styles.recentlyAddedItemBody}>
+        {recentItems.length === 0 ? (
+          <View style={styles.recentlyAddedItem} testID="dashboard-empty-recent-items">
+            <View style={styles.recentlyAddedItemBody}>
+              <Text style={styles.recentlyAddedItemTitle}>No recently added items yet</Text>
+              <Text style={styles.recentlyAddedItemSubtitle}>
+                Newly added medicines, MRs, and manufacturers will appear here.
+              </Text>
+            </View>
+          </View>
+        ) : (
+          recentItems.map((item, index) => (
+            <React.Fragment key={item.id}>
+              {index > 0 && <View style={styles.cardDivider} />}
+              <TouchableOpacity
+                style={styles.recentlyAddedItem}
+                onPress={item.onPress}
+                activeOpacity={0.7}
+              >
+                <View style={[styles.recentlyAddedIconSquare, { backgroundColor: item.iconBg }]}>
+                  {item.initials ? (
+                    <Text style={styles.recentInitialsText}>{item.initials}</Text>
+                  ) : (
+                    <Icon name={item.icon} size={18} color={item.iconColor} />
+                  )}
+                </View>
+                <View style={styles.recentlyAddedItemBody}>
                 <Text style={styles.recentlyAddedItemTitle} numberOfLines={1}>
                   {item.title}
                 </Text>
@@ -887,7 +838,8 @@ export const DashboardScreen: React.FC = () => {
               </View>
             </TouchableOpacity>
           </React.Fragment>
-        ))}
+        ))
+        )}
       </View>
 
       {/* 6. Last Updated Banner Card (Reference 2) */}

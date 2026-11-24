@@ -8,10 +8,19 @@ import React, {
   useState,
   type ReactNode,
 } from 'react';
-import { storage } from '../../lib/storage';
+import { AppState, type AppStateStatus } from 'react-native';
+import { INACTIVITY_EXPIRY_MS, storage } from '../../lib/storage';
 import { apiClient, isJwtExpired } from '../../services/api-client';
 import type { PublicUser } from '../../types/models';
 import { authService } from './authService';
+
+export const isSessionExpiredByInactivity = (
+  lastActiveTime: number | null,
+  now: number = Date.now(),
+): boolean => {
+  if (lastActiveTime === null) return false;
+  return now - lastActiveTime >= INACTIVITY_EXPIRY_MS;
+};
 
 export interface AuthContextType {
   user: PublicUser | null;
@@ -106,15 +115,22 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
     async function bootstrap(): Promise<void> {
       try {
-        const [storedToken, storedRefreshToken, storedUser] = await Promise.all([
+        const [storedToken, storedRefreshToken, storedUser, lastActiveTime] = await Promise.all([
           storage.getToken(),
           storage.getRefreshToken(),
           storage.getUser(),
+          storage.getLastActiveTime(),
         ]);
 
         if (isStale()) return;
 
         if (!storedToken && !storedRefreshToken) {
+          return;
+        }
+
+        // F-036A: Enforce 24-hour inactivity expiry before attempting session restoration/refresh
+        if (isSessionExpiredByInactivity(lastActiveTime)) {
+          await clearSessionIfCurrent();
           return;
         }
 
@@ -263,8 +279,33 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
     void bootstrap();
 
+    // F-036A: Re-check 24-hour inactivity expiry whenever the app returns to foreground
+    const appStateSubscription = AppState.addEventListener?.(
+      'change',
+      (nextState: AppStateStatus) => {
+        if (nextState !== 'active' || !isMounted || isLoggingOutRef.current) {
+          return;
+        }
+        void (async () => {
+          const [currentToken, lastActive] = await Promise.all([
+            storage.getToken(),
+            storage.getLastActiveTime(),
+          ]);
+          if (
+            isMounted &&
+            currentToken &&
+            !isLoggingOutRef.current &&
+            isSessionExpiredByInactivity(lastActive)
+          ) {
+            await logout();
+          }
+        })();
+      },
+    );
+
     return () => {
       isMounted = false;
+      appStateSubscription?.remove?.();
       apiClient.setOnUnauthorized(null);
       if (typeof apiClient.setOnTokenRefreshed === 'function') {
         apiClient.setOnTokenRefreshed(null);

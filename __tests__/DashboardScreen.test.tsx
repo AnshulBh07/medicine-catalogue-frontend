@@ -3,6 +3,7 @@ import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react
 import { AuthProvider } from '../src/features/auth';
 import { storage } from '../src/lib/storage';
 import { DashboardScreen } from '../src/screens/dashboard/DashboardScreen';
+import { apiClient } from '../src/services/api-client';
 
 const mockNavigate = jest.fn();
 const mockNavInstance = {
@@ -43,6 +44,69 @@ describe('DashboardScreen Visual & Functional Verification', () => {
     await storage.setToken('test-token');
     await storage.setUser(mockAdminUser);
     jest.clearAllMocks();
+    jest.spyOn(apiClient, 'get').mockImplementation((path: string) => {
+      if (path.startsWith('/medicines')) {
+        return Promise.resolve({
+          medicines: [
+            {
+              id: 'med-1',
+              name: 'Paracetamol 650mg',
+              shortDescription: 'Multivitamin with Zinc',
+              createdAt: '2026-08-30T10:00:00.000Z',
+              updatedAt: '2026-08-30T10:00:00.000Z',
+            },
+            {
+              id: 'med-2',
+              name: 'Becosules Z Capsule',
+              shortDescription: 'Multivitamin with Zinc',
+              createdAt: '2026-08-29T10:00:00.000Z',
+              updatedAt: '2026-08-29T10:00:00.000Z',
+            },
+            {
+              id: 'med-3',
+              name: 'Ascoril D Plus Syrup 100ml',
+              shortDescription: 'Dry Cough Relief Syrup',
+              createdAt: '2026-08-28T10:00:00.000Z',
+              updatedAt: '2026-08-28T10:00:00.000Z',
+            },
+          ],
+        });
+      }
+      if (path.startsWith('/compositions')) {
+        return Promise.resolve({
+          compositions: [
+            {
+              id: 'comp-1',
+              displayText: 'Amoxicillin + Clavulanic Acid',
+              createdAt: '2026-08-28T10:00:00.000Z',
+              updatedAt: '2026-08-28T10:00:00.000Z',
+            },
+          ],
+        });
+      }
+      if (path.startsWith('/manufacturers')) {
+        return Promise.resolve({
+          manufacturers: [
+            {
+              id: 'mfg-1',
+              name: 'Cipla Ltd.',
+              createdAt: '2026-08-27T10:00:00.000Z',
+              updatedAt: '2026-08-27T10:00:00.000Z',
+            },
+          ],
+        });
+      }
+      if (path.startsWith('/mrs')) {
+        return Promise.resolve({ mrs: [] });
+      }
+      if (path.startsWith('/notifications')) {
+        return Promise.resolve({ unreadCount: 0 });
+      }
+      if (path === '/users/me') {
+        return storage.getUser().then((u) => ({ user: u ?? mockAdminUser }));
+      }
+      return Promise.resolve({});
+    });
   });
 
   afterEach(() => {
@@ -92,7 +156,7 @@ describe('DashboardScreen Visual & Functional Verification', () => {
     // 4. Recent Activity (Reference 1)
     expect(getByText('Recent Activity')).toBeTruthy();
     expect(getByText('Added new medicine')).toBeTruthy();
-    expect(getByText('Paracetamol 650mg')).toBeTruthy();
+    expect(getAllByText('Paracetamol 650mg').length).toBeGreaterThanOrEqual(1);
     expect(getByText('Updated composition')).toBeTruthy();
     expect(getByText('Amoxicillin + Clavulanic Acid')).toBeTruthy();
     expect(getByText('Added manufacturer')).toBeTruthy();
@@ -104,13 +168,14 @@ describe('DashboardScreen Visual & Functional Verification', () => {
     expect(getByText('Users')).toBeTruthy();
     expect(getByText('Companies')).toBeTruthy();
 
-    // 6. Recently Added (Reference 2)
-    expect(getByText('Recently Added')).toBeTruthy();
-    expect(getByText('Becosules Z Capsule')).toBeTruthy();
-    expect(getByText('Multivitamin with Zinc')).toBeTruthy();
-    expect(getAllByText('Medicine').length).toBeGreaterThanOrEqual(1);
-    expect(getByText('Ascoril D Plus Syrup 100ml')).toBeTruthy();
-    expect(getByText('Benadryl Cough Syrup 100ml')).toBeTruthy();
+    // 6. Recently Added (Reference 2 — populated from live API mock, not hardcoded mock data)
+    await waitFor(() => {
+      expect(getByText('Recently Added')).toBeTruthy();
+      expect(getByText('Becosules Z Capsule')).toBeTruthy();
+      expect(getAllByText('Multivitamin with Zinc').length).toBeGreaterThanOrEqual(1);
+      expect(getAllByText('Medicine').length).toBeGreaterThanOrEqual(1);
+      expect(getByText('Ascoril D Plus Syrup 100ml')).toBeTruthy();
+    });
     expect(getByText(/Last updated:/)).toBeTruthy();
     expect(getByText(/"Better Care Through Knowledge"/)).toBeTruthy();
   }, 15000);

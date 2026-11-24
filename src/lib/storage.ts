@@ -7,6 +7,8 @@ const REFRESH_TOKEN_KEY = 'medicina_auth_refresh_token';
 const USER_KEY = 'medicina_auth_user';
 const LAST_ACTIVE_KEY = 'medicina_last_active';
 const MEDICINE_DRAFT_KEY = 'medicina_add_medicine_draft';
+const MEDICINE_DRAFT_CHUNK_PREFIX = 'medicina_add_medicine_draft_chunk_';
+const SECURE_STORE_CHUNK_SIZE = 1800; // Safely below SecureStore's 2048-byte limit
 const SAVED_LOCATION_KEY = 'medicina_saved_location';
 const CACHED_WEATHER_KEY = 'medicina_cached_weather';
 
@@ -28,6 +30,8 @@ export interface CachedWeather {
   weatherCode: number;
   weatherDescription: string;
   locationName: string;
+  latitude?: number;
+  longitude?: number;
   timestamp: number;
 }
 
@@ -205,19 +209,108 @@ export const storage = {
     const raw = await getItem(MEDICINE_DRAFT_KEY);
     if (!raw) return null;
     try {
-      return JSON.parse(raw) as MedicineDraft;
+      const parsed = JSON.parse(raw) as MedicineDraft | { __chunked: true; count: number };
+      if (
+        parsed &&
+        typeof parsed === 'object' &&
+        '__chunked' in parsed &&
+        parsed.__chunked === true &&
+        typeof parsed.count === 'number' &&
+        parsed.count > 0
+      ) {
+        const chunks: string[] = [];
+        for (let i = 0; i < parsed.count; i++) {
+          const chunk = await getItem(`${MEDICINE_DRAFT_CHUNK_PREFIX}${i}`);
+          if (chunk === null) {
+            await this.clearMedicineDraft();
+            return null;
+          }
+          chunks.push(chunk);
+        }
+        return JSON.parse(chunks.join('')) as MedicineDraft;
+      }
+      return parsed as MedicineDraft;
     } catch {
-      await deleteItem(MEDICINE_DRAFT_KEY);
+      await this.clearMedicineDraft();
       return null;
     }
   },
 
   async saveMedicineDraft(draft: MedicineDraft): Promise<void> {
-    await setItem(MEDICINE_DRAFT_KEY, JSON.stringify(draft));
+    // Strip any accidental large base64 data from selectedImage before persisting
+    const sanitizedDraft: MedicineDraft = {
+      ...draft,
+      selectedImage: draft.selectedImage
+        ? {
+            uri: draft.selectedImage.uri,
+            mimeType: draft.selectedImage.mimeType ?? null,
+            fileName: draft.selectedImage.fileName ?? null,
+            fileSize: draft.selectedImage.fileSize ?? null,
+            width: draft.selectedImage.width ?? null,
+            height: draft.selectedImage.height ?? null,
+          }
+        : null,
+    };
+
+    const serialized = JSON.stringify(sanitizedDraft);
+
+    // Determine any previous chunk count so stale trailing chunks are cleaned up
+    let previousCount = 0;
+    const existingRaw = await getItem(MEDICINE_DRAFT_KEY);
+    if (existingRaw) {
+      try {
+        const existingParsed = JSON.parse(existingRaw) as { __chunked?: boolean; count?: number };
+        if (existingParsed?.__chunked && typeof existingParsed.count === 'number') {
+          previousCount = existingParsed.count;
+        }
+      } catch {
+        // ignore corrupt previous manifest
+      }
+    }
+
+    if (serialized.length <= SECURE_STORE_CHUNK_SIZE) {
+      await setItem(MEDICINE_DRAFT_KEY, serialized);
+      for (let i = 0; i < previousCount; i++) {
+        await deleteItem(`${MEDICINE_DRAFT_CHUNK_PREFIX}${i}`);
+      }
+      return;
+    }
+
+    const totalChunks = Math.ceil(serialized.length / SECURE_STORE_CHUNK_SIZE);
+    for (let i = 0; i < totalChunks; i++) {
+      const slice = serialized.slice(
+        i * SECURE_STORE_CHUNK_SIZE,
+        (i + 1) * SECURE_STORE_CHUNK_SIZE,
+      );
+      await setItem(`${MEDICINE_DRAFT_CHUNK_PREFIX}${i}`, slice);
+    }
+    await setItem(
+      MEDICINE_DRAFT_KEY,
+      JSON.stringify({ __chunked: true, count: totalChunks }),
+    );
+    for (let i = totalChunks; i < previousCount; i++) {
+      await deleteItem(`${MEDICINE_DRAFT_CHUNK_PREFIX}${i}`);
+    }
   },
 
   async clearMedicineDraft(): Promise<void> {
-    await deleteItem(MEDICINE_DRAFT_KEY);
+    const existingRaw = await getItem(MEDICINE_DRAFT_KEY);
+    let chunkCount = 0;
+    if (existingRaw) {
+      try {
+        const parsed = JSON.parse(existingRaw) as { __chunked?: boolean; count?: number };
+        if (parsed?.__chunked && typeof parsed.count === 'number') {
+          chunkCount = parsed.count;
+        }
+      } catch {
+        // ignore
+      }
+    }
+    const deletes: Promise<void>[] = [deleteItem(MEDICINE_DRAFT_KEY)];
+    for (let i = 0; i < chunkCount; i++) {
+      deletes.push(deleteItem(`${MEDICINE_DRAFT_CHUNK_PREFIX}${i}`));
+    }
+    await Promise.all(deletes);
   },
 
   async getSavedLocation(): Promise<SavedLocation | null> {

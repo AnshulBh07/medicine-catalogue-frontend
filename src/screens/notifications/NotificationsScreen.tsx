@@ -19,7 +19,6 @@ import {
   markNotificationAsRead,
   type NotificationFilter,
   type NotificationItem,
-  type NotificationPriority,
 } from '../../services/notification.service';
 import type { RootStackParamList } from '../../types/navigation';
 
@@ -240,7 +239,7 @@ export const NotificationsScreen: React.FC = () => {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
   const [isLoadingMore, setIsLoadingMore] = useState<boolean>(false);
-  const [unreadCount, setUnreadCount] = useState<number>(0);
+  const [_unreadCount, setUnreadCount] = useState<number>(0);
 
   const loadNotifications = useCallback(
     async (targetPage: number = 1, filter: NotificationFilter = activeFilter, append: boolean = false) => {

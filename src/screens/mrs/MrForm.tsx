@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import {
   StyleSheet,
   Text,
-  TextInput as RNTextInput,
+  type TextInput as RNTextInput,
   TouchableOpacity,
   View,
 } from 'react-native';

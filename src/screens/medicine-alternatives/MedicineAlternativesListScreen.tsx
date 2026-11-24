@@ -22,7 +22,7 @@ import {
 } from '../../components';
 import { useAuth } from '../../features/auth';
 import { medicineAlternativeService } from '../../services/medicineAlternativeService';
-import { borderRadius, colors, fontSizes, fontWeights, spacing } from '../../theme';
+import { colors, fontWeights, spacing } from '../../theme';
 import type { PublicAlternativeGroup } from '../../types/models';
 import type { RootStackParamList } from '../../types/navigation';
 

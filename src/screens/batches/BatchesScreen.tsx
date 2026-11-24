@@ -15,6 +15,7 @@ import {
   AppScreen,
   Button,
   Card,
+  ConfirmDialog,
   EmptyState,
   ErrorState,
   FloatingActionButton,
@@ -202,13 +203,27 @@ export const BatchesScreen: React.FC = () => {
     }
   };
 
-  const handleDeleteBatch = async (batchId: string) => {
+  const [batchToDelete, setBatchToDelete] = useState<PublicBatch | null>(null);
+  const [isDeletingBatch, setIsDeletingBatch] = useState(false);
+
+  const handleRequestDeleteBatch = (batch: PublicBatch) => {
+    if (isDeletingBatch) return;
+    setBatchToDelete(batch);
+  };
+
+  const handleConfirmDeleteBatch = async () => {
+    if (!batchToDelete || isDeletingBatch) return;
     try {
-      await apiClient.delete(`/batches/${batchId}`);
+      setIsDeletingBatch(true);
+      await apiClient.delete(`/batches/${batchToDelete.id}`);
+      setBatchToDelete(null);
       fetchBatches();
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to delete batch';
       setErrorMessage(msg);
+      setBatchToDelete(null);
+    } finally {
+      setIsDeletingBatch(false);
     }
   };
 
@@ -340,7 +355,8 @@ export const BatchesScreen: React.FC = () => {
                     <View style={styles.batchActions}>
                       <TouchableOpacity
                         style={styles.deleteBatchBtn}
-                        onPress={() => handleDeleteBatch(b.id)}
+                        onPress={() => handleRequestDeleteBatch(b)}
+                        disabled={isDeletingBatch}
                         testID={`delete-batch-${b.id}`}
                       >
                         <Icon name="delete" size={12} color={colors.error} />
@@ -362,6 +378,27 @@ export const BatchesScreen: React.FC = () => {
           testID="add-batch-fab"
         />
       ) : null}
+
+      <ConfirmDialog
+        visible={Boolean(batchToDelete)}
+        title="Delete Batch"
+        message={
+          batchToDelete
+            ? `Are you sure you want to permanently delete batch "${batchToDelete.batchNumber}"${batchToDelete.medicine?.name ? ` for ${batchToDelete.medicine.name}` : ''}? This action cannot be undone.`
+            : ''
+        }
+        confirmText="Delete Batch"
+        cancelText="Cancel"
+        isDestructive
+        loading={isDeletingBatch}
+        onConfirm={() => void handleConfirmDeleteBatch()}
+        onCancel={() => {
+          if (!isDeletingBatch) setBatchToDelete(null);
+        }}
+        testID="delete-batch-confirm-dialog"
+        confirmTestID="confirm-delete-batch-btn"
+        cancelTestID="cancel-delete-batch-btn"
+      />
 
       {/* Add Batch Modal */}
       <Modal

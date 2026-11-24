@@ -3,8 +3,6 @@ import {
   ActivityIndicator,
   Alert,
   Modal,
-  Platform,
-  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -16,7 +14,6 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import {
   AppScreen,
   Button,
-  Card,
   ErrorState,
   Icon,
   LoadingIndicator,
@@ -25,7 +22,7 @@ import {
 import { useAuth } from '../../features/auth';
 import { apiClient } from '../../services/api-client';
 import { medicineAlternativeService } from '../../services/medicineAlternativeService';
-import { borderRadius, colors, fontSizes, fontWeights, spacing } from '../../theme';
+import { colors, fontWeights, spacing } from '../../theme';
 import type { PublicMedicine } from '../../types/models';
 import type { RootStackParamList } from '../../types/navigation';
 
@@ -143,7 +140,7 @@ export const AddEditAlternativeScreen: React.FC = () => {
                 name: item.medicine.name,
                 form: item.medicine.form,
                 packQuantity: item.medicine.packQuantity,
-                packUnit: item.medicine.packUnit as any,
+                packUnit: item.medicine.packUnit as PublicMedicine['packUnit'],
                 active: item.medicine.active,
                 composition: {
                   id: '',

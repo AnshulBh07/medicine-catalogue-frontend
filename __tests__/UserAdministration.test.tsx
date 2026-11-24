@@ -17,7 +17,7 @@ let mockRouteParams: { id?: string } = {};
 
 jest.mock('@react-navigation/native', () => {
   const actualNav = jest.requireActual('@react-navigation/native');
-  const React = require('react');
+  const actualReact = jest.requireActual<typeof React>('react');
   return {
     ...actualNav,
     useNavigation: () => ({
@@ -29,7 +29,7 @@ jest.mock('@react-navigation/native', () => {
       params: mockRouteParams,
     }),
     useFocusEffect: (cb: () => void) => {
-      React.useEffect(() => {
+      actualReact.useEffect(() => {
         cb();
       }, [cb]);
     },

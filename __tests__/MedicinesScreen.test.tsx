@@ -1,5 +1,5 @@
 import React from 'react';
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import { MedicinesScreen } from '../src/screens/medicines/MedicinesScreen';
 
 const mockNavigate = jest.fn();

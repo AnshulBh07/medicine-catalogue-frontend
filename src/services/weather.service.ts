@@ -11,6 +11,37 @@ export interface WeatherData {
 }
 
 const CACHE_VALIDITY_MS = 15 * 60 * 1000; // 15 minutes
+const STALE_FALLBACK_MAX_AGE_MS = 24 * 60 * 60 * 1000; // 24 hours max offline fallback
+const COORD_MATCH_TOLERANCE_DEG = 0.05; // ~5.5 km
+
+function isCacheForSameLocation(
+  cached: { locationName?: string; latitude?: number; longitude?: number },
+  latitude: number,
+  longitude: number,
+  locationName: string,
+): boolean {
+  if (
+    typeof cached.latitude === 'number' &&
+    typeof cached.longitude === 'number' &&
+    !isNaN(cached.latitude) &&
+    !isNaN(cached.longitude)
+  ) {
+    const coordsMatch =
+      Math.abs(cached.latitude - latitude) <= COORD_MATCH_TOLERANCE_DEG &&
+      Math.abs(cached.longitude - longitude) <= COORD_MATCH_TOLERANCE_DEG;
+    if (!coordsMatch) {
+      return false;
+    }
+  }
+
+  const cachedName = cached.locationName?.trim().toLowerCase();
+  const targetName = locationName.trim().toLowerCase();
+  if (cachedName && targetName && cachedName !== targetName) {
+    return false;
+  }
+
+  return true;
+}
 
 export function getWeatherDetails(code: number): { description: string; icon: IconName } {
   switch (code) {
@@ -72,11 +103,15 @@ export async function fetchWeather(
   locationName: string,
   forceRefresh = false,
 ): Promise<WeatherData> {
-  // Check cached weather first if not force-refreshing
+  // Check cached weather first if not force-refreshing (must match current location & freshness)
   if (!forceRefresh) {
     try {
       const cached = await storage.getCachedWeather();
-      if (cached && Date.now() - cached.timestamp < CACHE_VALIDITY_MS) {
+      if (
+        cached &&
+        Date.now() - cached.timestamp < CACHE_VALIDITY_MS &&
+        isCacheForSameLocation(cached, latitude, longitude, locationName)
+      ) {
         const { description, icon } = getWeatherDetails(cached.weatherCode);
         return {
           temperature: cached.temperature,
@@ -117,12 +152,14 @@ export async function fetchWeather(
         const weatherCode = typeof current.weather_code === 'number' ? current.weather_code : 0;
         const { description, icon } = getWeatherDetails(weatherCode);
 
-        // Cache successful response
+        // Cache successful response with location coordinates
         await storage.setCachedWeather({
           temperature: roundedTemp,
           weatherCode,
           weatherDescription: description,
           locationName,
+          latitude,
+          longitude,
           timestamp: Date.now(),
         });
 
@@ -140,10 +177,14 @@ export async function fetchWeather(
     // Network or timeout failure; fall back to cached weather
   }
 
-  // Fallback to any existing cached weather if available
+  // Fallback to cached weather ONLY if it matches the requested location and is within 24h
   try {
     const cached = await storage.getCachedWeather();
-    if (cached) {
+    if (
+      cached &&
+      Date.now() - cached.timestamp < STALE_FALLBACK_MAX_AGE_MS &&
+      isCacheForSameLocation(cached, latitude, longitude, locationName)
+    ) {
       const { description, icon } = getWeatherDetails(cached.weatherCode);
       return {
         temperature: cached.temperature,

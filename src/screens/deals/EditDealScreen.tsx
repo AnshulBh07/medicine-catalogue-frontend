@@ -25,6 +25,7 @@ import {
 import type { DealStatus, PublicDeal } from '../../types/models';
 import type { RootStackParamList } from '../../types/navigation';
 import { formatScheme } from '../../utils/commercial.utils';
+import { parseValidDealDateIso } from '../../utils/deal-date.utils';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 type EditDealRouteProp = RouteProp<RootStackParamList, 'EditDeal'>;
@@ -119,6 +120,19 @@ export const EditDealScreen: React.FC = () => {
       return;
     }
 
+    let parsedDealDateIso: string | undefined;
+    if (dealDateStr.trim()) {
+      const validIso = parseValidDealDateIso(dealDateStr);
+      if (!validIso) {
+        Alert.alert(
+          'Invalid Date',
+          'Please enter a valid deal date in YYYY-MM-DD format (e.g. 2026-08-31).',
+        );
+        return;
+      }
+      parsedDealDateIso = validIso;
+    }
+
     setIsSaving(true);
     try {
       await dealService.updateDeal(deal.id, {
@@ -127,7 +141,7 @@ export const EditDealScreen: React.FC = () => {
         agreedBillDiscount: discountNum,
         mrPhoneSnapshot: mrPhoneSnapshot.trim() || null,
         status: deliveryStatus,
-        dealDate: dealDateStr ? new Date(dealDateStr).toISOString() : undefined,
+        dealDate: parsedDealDateIso,
         notes: notes.trim() || null,
       });
 

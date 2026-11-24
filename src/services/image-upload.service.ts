@@ -75,7 +75,7 @@ export interface PresignedUploadResponse {
  */
 async function getImageUploadBody(
   image: SelectedMedicineImage,
-  contentType: string,
+  _contentType: string,
 ): Promise<Blob | ArrayBuffer> {
   // If base64 is already available from ImagePicker
   if (image.base64) {

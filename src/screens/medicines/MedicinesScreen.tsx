@@ -234,23 +234,13 @@ export const MedicinesScreen: React.FC = () => {
     return count;
   }, [advancedFilters]);
 
-  // Estimated MRP fallback for price filtering
-  const getEstimatedMrp = (medicine: PublicMedicine): number => {
+  // Resolve real MRP from medicine record (never fabricate hardcoded mock prices)
+  const getEstimatedMrp = (medicine: PublicMedicine): number | null => {
     if (medicine.mrp !== undefined && medicine.mrp !== null) {
-      return Number(medicine.mrp);
+      const parsed = Number(medicine.mrp);
+      return !isNaN(parsed) ? parsed : null;
     }
-    // Estimated price table for catalogue medicines
-    const priceMap: Record<string, number> = {
-      'med-1': 25.0,
-      'med-2': 85.0,
-      'med-3': 35.0,
-      'med-4': 60.0,
-      'med-5': 45.0,
-      'med-6': 30.0,
-      'med-7': 110.0,
-      'med-8': 55.0,
-    };
-    return priceMap[medicine.id] ?? 50.0;
+    return null;
   };
 
   // Safe margin value resolution for sorting (returns null when margin is computed server-side only)
@@ -280,7 +270,7 @@ export const MedicinesScreen: React.FC = () => {
     let highest = 0;
     medicines.forEach((m) => {
       const p = getEstimatedMrp(m);
-      if (p > highest) highest = p;
+      if (p !== null && p > highest) highest = p;
     });
     if (highest <= 0) return 5000;
     if (highest <= 500) return 500;
@@ -406,10 +396,16 @@ export const MedicinesScreen: React.FC = () => {
     const minP = advancedFilters.minPrice ? parseFloat(advancedFilters.minPrice) : null;
     const maxP = advancedFilters.maxPrice ? parseFloat(advancedFilters.maxPrice) : null;
     if (minP !== null && !isNaN(minP)) {
-      result = result.filter((m) => getEstimatedMrp(m) >= minP);
+      result = result.filter((m) => {
+        const p = getEstimatedMrp(m);
+        return p !== null && p >= minP;
+      });
     }
     if (maxP !== null && !isNaN(maxP)) {
-      result = result.filter((m) => getEstimatedMrp(m) <= maxP);
+      result = result.filter((m) => {
+        const p = getEstimatedMrp(m);
+        return p !== null && p <= maxP;
+      });
     }
 
     // 8. Medical Representative (MR) Filter
@@ -435,6 +431,9 @@ export const MedicinesScreen: React.FC = () => {
       if (sortBy === 'mrp') {
         const pA = getEstimatedMrp(a);
         const pB = getEstimatedMrp(b);
+        if (pA === null && pB === null) return 0;
+        if (pA === null) return 1;
+        if (pB === null) return -1;
         return sortOrder === 'asc' ? pA - pB : pB - pA;
       }
       if (sortBy === 'packQuantity') {

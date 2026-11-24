@@ -26,6 +26,7 @@ import {
 import type { PublicMedicine, PublicMr } from '../../types/models';
 import type { RootStackParamList } from '../../types/navigation';
 import { formatScheme } from '../../utils/commercial.utils';
+import { parseValidDealDateIso } from '../../utils/deal-date.utils';
 import { SelectionBottomSheetModal } from './SelectionBottomSheetModal';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
@@ -385,12 +386,25 @@ export const AddDealScreen: React.FC = () => {
       return;
     }
 
+    let parsedDealDateIso: string | undefined;
+    if (dealDateStr.trim()) {
+      const validIso = parseValidDealDateIso(dealDateStr);
+      if (!validIso) {
+        Alert.alert(
+          'Invalid Date',
+          'Please enter a valid deal date in YYYY-MM-DD format (e.g. 2026-08-31).',
+        );
+        return;
+      }
+      parsedDealDateIso = validIso;
+    }
+
     setIsSaving(true);
     try {
       const res = await dealService.createDeal({
         medicineId: selectedMedicine.id,
         mrId: selectedMr.id,
-        dealDate: dealDateStr ? new Date(dealDateStr).toISOString() : undefined,
+        dealDate: parsedDealDateIso,
         agreedMrp: mrpNum,
         agreedScheme: schemeTrimmed,
         agreedBillDiscount: discountNum,

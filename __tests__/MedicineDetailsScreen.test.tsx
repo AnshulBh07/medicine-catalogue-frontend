@@ -1,6 +1,7 @@
 import React from 'react';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import { MedicineDetailsScreen } from '../src/screens/medicines/MedicineDetailsScreen';
+import { apiClient } from '../src/services/api-client';
 
 const mockGoBack = jest.fn();
 const mockNavigate = jest.fn();
@@ -110,7 +111,6 @@ describe('MedicineDetailsScreen Verification', () => {
   });
 
   it('renders commercial trade scheme as clean string and current batch date human-formatted', async () => {
-    const { apiClient } = require('../src/services/api-client');
     (apiClient.get as jest.Mock).mockImplementation((url: string) => {
       if (url.includes('/commercial-details')) {
         return Promise.resolve({
