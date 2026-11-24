@@ -188,8 +188,8 @@ export const AddShortageMedicineScreen: React.FC = () => {
     let numericCurrentQty: number | undefined = undefined;
     if (currentQuantity.trim()) {
       const parsed = parseInt(currentQuantity, 10);
-      if (isNaN(parsed) || parsed <= 0) {
-        setFormError('Please enter a valid current quantity greater than zero.');
+      if (isNaN(parsed) || parsed < 0) {
+        setFormError('Please enter a valid current quantity (0 or greater).');
         return;
       }
       numericCurrentQty = parsed;

@@ -76,11 +76,11 @@ function formatDateDisplay(dateStr: string): string {
 function formatAddedTimestamp(isoStr: string): string {
   try {
     const dt = new Date(isoStr);
-    const day = dt.getUTCDate();
-    const month = MONTH_NAMES[dt.getUTCMonth()].slice(0, 3);
-    const year = dt.getUTCFullYear();
-    let hours = dt.getUTCHours();
-    const minutes = String(dt.getUTCMinutes()).padStart(2, '0');
+    const day = dt.getDate();
+    const month = MONTH_NAMES[dt.getMonth()].slice(0, 3);
+    const year = dt.getFullYear();
+    let hours = dt.getHours();
+    const minutes = String(dt.getMinutes()).padStart(2, '0');
     const ampm = hours >= 12 ? 'PM' : 'AM';
     hours = hours % 12;
     hours = hours ? hours : 12;
@@ -242,8 +242,8 @@ export const ShortageDetailsScreen: React.FC = () => {
     let numericCurrentQty: number | null = null;
     if (editCurrentQtyValue.trim()) {
       const parsed = parseInt(editCurrentQtyValue, 10);
-      if (isNaN(parsed) || parsed <= 0) {
-        Alert.alert('Invalid Quantity', 'Current quantity must be greater than zero.');
+      if (isNaN(parsed) || parsed < 0) {
+        Alert.alert('Invalid Quantity', 'Current quantity must be zero or greater.');
         return;
       }
       numericCurrentQty = parsed;
@@ -261,7 +261,7 @@ export const ShortageDetailsScreen: React.FC = () => {
         unit: editUnitValue,
         note: editNoteValue.trim() || null,
       };
-      if (numericCurrentQty !== null) {
+      if (numericCurrentQty !== null || item.currentQuantity !== null) {
         patchPayload.currentQuantity = numericCurrentQty;
       }
       const res = await shortageService.patchShortageItem(item.id, patchPayload);

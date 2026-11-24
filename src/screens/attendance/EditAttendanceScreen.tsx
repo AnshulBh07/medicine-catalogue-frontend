@@ -62,6 +62,7 @@ export const EditAttendanceScreen: React.FC = () => {
     date,
     userName,
     monthlySalary,
+    shiftType,
     initialStatus = 'PRESENT',
     initialWorkUnits,
     initialNotes = '',
@@ -145,8 +146,13 @@ export const EditAttendanceScreen: React.FC = () => {
       setIsSubmitting(true);
       setError(null);
 
-      // If resetting to standard PRESENT with default units
-      if (selectedStatus === 'PRESENT' && selectedWorkUnits === 2) {
+      // Preserve notes when explicitly entered/edited for PRESENT; otherwise reset FULL_DAY to default PRESENT
+      const trimmedNotes = notes.trim();
+      const hasPresentNotes =
+        Boolean(trimmedNotes) &&
+        (initialStatus === 'PRESENT' || trimmedNotes !== (initialNotes ?? '').trim());
+
+      if (selectedStatus === 'PRESENT' && selectedWorkUnits === 2 && !hasPresentNotes && shiftType !== 'HALF_DAY') {
         await attendanceService.resetAttendance(userId, date);
       } else {
         const payload: {
