@@ -434,6 +434,7 @@ export const AddDealScreen: React.FC = () => {
 
   return (
     <AppScreen
+      scrollable={false}
       headerProps={{
         title: 'Add Medicine Deal',
         subtitle: 'Record commercial agreement with MR',

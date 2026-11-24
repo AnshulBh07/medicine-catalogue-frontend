@@ -89,14 +89,15 @@ export const BatchesScreen: React.FC = () => {
       const res = await apiClient.get<{ medicines: PublicMedicine[] }>('/medicines?limit=100');
       if (res && Array.isArray(res.medicines)) {
         setMedicines(res.medicines);
-        if (!selectedMedId && res.medicines.length > 0) {
-          setSelectedMedId(res.medicines[0]!.id);
+        if (res.medicines.length > 0) {
+          const firstMedId = res.medicines[0]!.id;
+          setSelectedMedId((prev) => prev || firstMedId);
         }
       }
     } catch {
       // Ignore
     }
-  }, [selectedMedId]);
+  }, []);
 
   useEffect(() => {
     fetchBatches();

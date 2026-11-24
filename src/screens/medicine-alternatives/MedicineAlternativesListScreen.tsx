@@ -57,12 +57,19 @@ export const MedicineAlternativesListScreen: React.FC = () => {
     }
   }, []);
 
+  const skipInitialFocusRef = React.useRef(true);
+
   useEffect(() => {
+    skipInitialFocusRef.current = true;
     void fetchAlternatives();
   }, [fetchAlternatives]);
 
   useEffect(() => {
     const unsubscribe = navigation.addListener?.('focus', () => {
+      if (skipInitialFocusRef.current) {
+        skipInitialFocusRef.current = false;
+        return;
+      }
       void fetchAlternatives(true);
     });
     return unsubscribe;
@@ -120,6 +127,7 @@ export const MedicineAlternativesListScreen: React.FC = () => {
 
   return (
     <AppScreen
+      scrollable={false}
       headerProps={{
         title: 'Medicine Alternatives',
         subtitle: 'Approved alternatives for medicines',

@@ -88,35 +88,56 @@ export const AddShortageMedicineScreen: React.FC = () => {
   const [formError, setFormError] = useState<string | null>(null);
 
   const isMountedRef = React.useRef<boolean>(true);
+  const requestSeqRef = React.useRef<number>(0);
+  const abortControllerRef = React.useRef<AbortController | null>(null);
 
   React.useEffect(() => {
     isMountedRef.current = true;
     return () => {
       isMountedRef.current = false;
+      abortControllerRef.current?.abort();
     };
   }, []);
 
   const fetchMedicines = useCallback(async (search = '') => {
+    const requestSeq = ++requestSeqRef.current;
+    abortControllerRef.current?.abort();
+    const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    abortControllerRef.current = controller;
+
     try {
       if (isMountedRef.current) setIsSearching(true);
       const isSearch = Boolean(search.trim());
       const query = isSearch
         ? `?search=${encodeURIComponent(search.trim())}&limit=10`
         : '?limit=4';
-      const response = await apiClient.get<{ medicines: PublicMedicine[] }>(`/medicines${query}`);
-      if (!isMountedRef.current) return;
+      const response = await apiClient.get<{ medicines: PublicMedicine[] }>(
+        `/medicines${query}`,
+        controller ? { signal: controller.signal } : undefined,
+      );
+      if (!isMountedRef.current || requestSeq !== requestSeqRef.current) return;
       const list = response.medicines || [];
       setMedicinesList(isSearch ? list : list.slice(0, 4));
-    } catch {
-      if (!isMountedRef.current) return;
+    } catch (err: unknown) {
+      if (!isMountedRef.current || requestSeq !== requestSeqRef.current) return;
+      if ((err as { code?: string })?.code === 'REQUEST_CANCELLED') return;
       setMedicinesList([]);
     } finally {
-      if (isMountedRef.current) setIsSearching(false);
+      if (isMountedRef.current && requestSeq === requestSeqRef.current) {
+        setIsSearching(false);
+      }
     }
   }, []);
 
   useEffect(() => {
-    fetchMedicines(searchQuery);
+    if (!searchQuery.trim()) {
+      void fetchMedicines('');
+      return;
+    }
+    const timer = setTimeout(() => {
+      void fetchMedicines(searchQuery);
+    }, 300);
+    return () => clearTimeout(timer);
   }, [fetchMedicines, searchQuery]);
 
   const handleSelectMedicine = (med: PublicMedicine) => {

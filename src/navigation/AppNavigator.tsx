@@ -62,13 +62,8 @@ export const AppNavigator: React.FC = () => {
       <Stack.Screen name="MainTabs" component={TabNavigator} />
       <Stack.Screen name="Medicines" component={MedicinesScreen} />
       <Stack.Screen name="MedicineDetails" component={MedicineDetailsScreen} />
-      <Stack.Screen name="AddMedicine" component={AddMedicineScreen} />
-      <Stack.Screen name="EditMedicine" component={EditMedicineScreen} />
       <Stack.Screen name="MRs" component={MrsScreen} />
       <Stack.Screen name="MrDetails" component={MrDetailsScreen} />
-      <Stack.Screen name="AddMr" component={AddMrScreen} />
-      <Stack.Screen name="EditMr" component={EditMrScreen} />
-      <Stack.Screen name="ManageMrMedicines" component={ManageMrMedicinesScreen} />
       <Stack.Screen name="Manufacturers" component={ManufacturersScreen} />
       <Stack.Screen name="Compositions" component={CompositionsScreen} />
       <Stack.Screen name="CompositionSalts" component={CompositionSaltsScreen} />
@@ -77,19 +72,24 @@ export const AppNavigator: React.FC = () => {
       <Stack.Screen name="ShortageNotebook" component={ShortageListScreen} />
       <Stack.Screen name="AddShortageMedicine" component={AddShortageMedicineScreen} />
       <Stack.Screen name="ShortageDetails" component={ShortageDetailsScreen} />
-      <Stack.Screen name="Deals" component={DealsListScreen} />
-      <Stack.Screen name="DealDetails" component={DealDetailsScreen} />
-      <Stack.Screen name="AddDeal" component={AddDealScreen} />
-      <Stack.Screen name="EditDeal" component={EditDealScreen} />
       <Stack.Screen name="MyAccount" component={MyAccountScreen} />
       <Stack.Screen name="EditProfile" component={EditProfileScreen} />
       <Stack.Screen name="Notifications" component={NotificationsScreen} />
       <Stack.Screen name="MedicineAlternatives" component={MedicineAlternativesListScreen} />
-      <Stack.Screen name="AddEditAlternative" component={AddEditAlternativeScreen} />
 
       {/* ADMIN-only routes */}
       {isAdmin ? (
         <>
+          <Stack.Screen name="AddMedicine" component={AddMedicineScreen} />
+          <Stack.Screen name="EditMedicine" component={EditMedicineScreen} />
+          <Stack.Screen name="AddMr" component={AddMrScreen} />
+          <Stack.Screen name="EditMr" component={EditMrScreen} />
+          <Stack.Screen name="ManageMrMedicines" component={ManageMrMedicinesScreen} />
+          <Stack.Screen name="Deals" component={DealsListScreen} />
+          <Stack.Screen name="DealDetails" component={DealDetailsScreen} />
+          <Stack.Screen name="AddDeal" component={AddDealScreen} />
+          <Stack.Screen name="EditDeal" component={EditDealScreen} />
+          <Stack.Screen name="AddEditAlternative" component={AddEditAlternativeScreen} />
           <Stack.Screen name="Users" component={UsersScreen} />
           <Stack.Screen name="UserDetails" component={UserDetailsScreen} />
           <Stack.Screen name="AddUser" component={AddUserScreen} />

@@ -13,6 +13,7 @@ import {
   AutocompleteInput,
   Card,
   ConfirmDialog,
+  ErrorState,
   FormField,
   Icon,
   LoadingIndicator,
@@ -20,6 +21,7 @@ import {
   PrimaryButton,
   TextInput,
 } from '../../components';
+import { useAuth } from '../../features/auth';
 import { apiClient, ApiError } from '../../services/api-client';
 import { borderRadius, colors, fontSizes, fontWeights, spacing } from '../../theme';
 import type { PublicManufacturer, PublicMedicine, PublicMr } from '../../types/models';
@@ -43,6 +45,7 @@ export const MrForm: React.FC<MrFormProps> = ({
   onCancel,
 }) => {
   const navigation = useNavigation<NavigationProp>();
+  const { isAdmin } = useAuth();
 
   // Form Fields
   const [name, setName] = useState('');
@@ -89,6 +92,10 @@ export const MrForm: React.FC<MrFormProps> = ({
   // Load existing MR in edit mode
   useEffect(() => {
     const loadMrData = async () => {
+      if (!isAdmin) {
+        setIsLoadingInitial(false);
+        return;
+      }
       if (mode !== 'edit' || !mrId) return;
 
       try {
@@ -303,6 +310,28 @@ export const MrForm: React.FC<MrFormProps> = ({
       navigation.goBack();
     }
   };
+
+  if (!isAdmin) {
+    return (
+      <AppScreen
+        headerProps={{
+          title: mode === 'create' ? 'Add Representative' : 'Edit Representative',
+          showBack: true,
+          onBack: handleBackPress,
+        }}
+      >
+        <ErrorState
+          title="Access Restricted"
+          message={
+            mode === 'create'
+              ? 'Adding medical representatives is restricted to ADMIN accounts only.'
+              : 'Editing medical representatives is restricted to ADMIN accounts only.'
+          }
+          testID="mr-form-access-restricted"
+        />
+      </AppScreen>
+    );
+  }
 
   if (isLoadingInitial) {
     return (

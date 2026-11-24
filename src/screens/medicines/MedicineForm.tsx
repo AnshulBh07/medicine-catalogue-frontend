@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Alert,
   Image,
+  Linking,
   Modal,
   Platform,
   Pressable,
@@ -1054,11 +1056,42 @@ export const MedicineForm: React.FC<MedicineFormProps> = ({
   };
 
   // Image Picker Handlers
+  const [scannerError, setScannerError] = useState<string | null>(null);
+  const ocrAbortControllerRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    return () => {
+      ocrAbortControllerRef.current?.abort();
+    };
+  }, []);
+
+  const promptOpenSettings = (title: string, message: string) => {
+    Alert.alert(title, message, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Open Settings',
+        onPress: () => {
+          void Linking.openSettings();
+        },
+      },
+    ]);
+  };
+
   const handlePickImage = async () => {
     try {
+      setGeneralError(null);
       const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (!permissionResult.granted && !permissionResult.canAskAgain && Platform.OS !== 'web') {
-        setGeneralError('Permission to access photo gallery was denied. Please allow gallery access in device settings.');
+      if (!permissionResult.granted && Platform.OS !== 'web') {
+        if (permissionResult.canAskAgain === false) {
+          const msg =
+            'Photo gallery permission is disabled in device settings. Open Settings to allow access, or continue entering medicine details manually.';
+          setGeneralError(msg);
+          promptOpenSettings('Gallery Permission Needed', msg);
+        } else {
+          setGeneralError(
+            'Permission to access photo gallery was denied. You can try again or continue entering medicine details manually.',
+          );
+        }
         return;
       }
 
@@ -1103,17 +1136,44 @@ export const MedicineForm: React.FC<MedicineFormProps> = ({
 
   // Feature 3: Photo Scanner Handlers
   const handleOpenScanner = () => {
+    setScannerError(null);
     setScannedPhotos([]);
     setShowScannerModal(true);
   };
 
+  const handleCloseScanner = () => {
+    if (isScanningOcr) return;
+    setScannerError(null);
+    setScannedPhotos([]);
+    setShowScannerModal(false);
+  };
+
+  const handleCancelOcrScan = () => {
+    ocrAbortControllerRef.current?.abort();
+    ocrAbortControllerRef.current = null;
+    setIsScanningOcr(false);
+    setScannerError(null);
+    setScannedPhotos([]);
+    setShowScannerModal(false);
+  };
+
   const handleCaptureScannerPhoto = async (source: 'camera' | 'library') => {
     try {
+      setScannerError(null);
       let result: ImagePicker.ImagePickerResult;
       if (source === 'camera') {
         const perm = await ImagePicker.requestCameraPermissionsAsync();
         if (!perm.granted && Platform.OS !== 'web') {
-          setGeneralError('Camera permission is required to photograph medicine packaging.');
+          if (perm.canAskAgain === false) {
+            const msg =
+              'Camera permission is disabled in device settings. Open Settings to enable camera access, or enter details manually.';
+            setScannerError(msg);
+            promptOpenSettings('Camera Permission Needed', msg);
+          } else {
+            setScannerError(
+              'Camera permission is required to photograph medicine packaging. You can allow access or enter details manually.',
+            );
+          }
           return;
         }
         result = await ImagePicker.launchCameraAsync({
@@ -1124,7 +1184,16 @@ export const MedicineForm: React.FC<MedicineFormProps> = ({
       } else {
         const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
         if (!perm.granted && Platform.OS !== 'web') {
-          setGeneralError('Gallery permission is required to select packaging photos.');
+          if (perm.canAskAgain === false) {
+            const msg =
+              'Gallery permission is disabled in device settings. Open Settings to allow access, or enter details manually.';
+            setScannerError(msg);
+            promptOpenSettings('Gallery Permission Needed', msg);
+          } else {
+            setScannerError(
+              'Gallery permission is required to select packaging photos. You can allow access or enter details manually.',
+            );
+          }
           return;
         }
         result = await ImagePicker.launchImageLibraryAsync({
@@ -1155,21 +1224,47 @@ export const MedicineForm: React.FC<MedicineFormProps> = ({
       }
     } catch (err) {
       console.warn('Scanner capture error:', err);
-      setGeneralError('Failed to capture photo. Please try again.');
+      setScannerError('Failed to capture photo. Please try again or enter details manually.');
     }
   };
 
   const handleRemoveScannedPhoto = (index: number) => {
+    if (isScanningOcr) return;
     setScannedPhotos((prev) => prev.filter((_, idx) => idx !== index));
   };
 
   const handleProcessScannedPhotos = async () => {
-    if (scannedPhotos.length === 0) return;
+    if (scannedPhotos.length === 0 || isScanningOcr) return;
+
+    const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    ocrAbortControllerRef.current = controller;
 
     try {
+      setScannerError(null);
       setIsScanningOcr(true);
-      const ocrResult = await ocrService.scanMedicinePhotos(scannedPhotos);
-      const ext = ocrResult.extracted;
+      const ocrResult = await ocrService.scanMedicinePhotos(
+        scannedPhotos,
+        controller ? { signal: controller.signal } : undefined,
+      );
+
+      // Ignore result if user cancelled while in flight
+      if (controller?.signal.aborted) {
+        return;
+      }
+
+      const ext = ocrResult.extracted || {};
+
+      // If no text/fields were extracted, do not corrupt existing form state or claim success
+      if (!ocrResult.fieldsExtractedCount || ocrResult.fieldsExtractedCount <= 0) {
+        setShowScannerModal(false);
+        setScannedPhotos([]);
+        setScanFeedback({
+          type: 'warning',
+          message:
+            'No packaging details could be extracted from the selected photos. Existing form fields were left unchanged—please review and enter details manually.',
+        });
+        return;
+      }
 
       markDirty();
 
@@ -1185,9 +1280,7 @@ export const MedicineForm: React.FC<MedicineFormProps> = ({
         const match = manufacturers.find(
           (m) => m.name.toLowerCase() === ext.manufacturer!.toLowerCase(),
         );
-        if (match) {
-          setManufacturerId(match.id);
-        }
+        setManufacturerId(match ? match.id : null);
         if (fieldErrors.manufacturer) setFieldErrors((p) => ({ ...p, manufacturer: '' }));
       }
 
@@ -1249,6 +1342,7 @@ export const MedicineForm: React.FC<MedicineFormProps> = ({
             unit: (s.unit as CompositionSaltUnit) || 'MG',
           };
         });
+        saltCounterRef.current = Math.max(saltCounterRef.current, newSaltRows.length);
         setSaltRows(newSaltRows);
       }
 
@@ -1266,6 +1360,7 @@ export const MedicineForm: React.FC<MedicineFormProps> = ({
       }
 
       setShowScannerModal(false);
+      setScannedPhotos([]);
 
       if (ocrResult.conflicts && ocrResult.conflicts.length > 0) {
         setScanFeedback({
@@ -1280,10 +1375,19 @@ export const MedicineForm: React.FC<MedicineFormProps> = ({
         });
       }
     } catch (err) {
+      if (controller?.signal.aborted) {
+        return;
+      }
       console.warn('OCR scan processing error:', err);
-      setGeneralError('Failed to process medicine packaging photos. Please enter manually or try again.');
-      setShowScannerModal(false);
+      const errMessage =
+        err instanceof ApiError && err.code === 'REQUEST_TIMEOUT'
+          ? 'Scanning timed out. Please try again or enter details manually.'
+          : 'Failed to process medicine packaging photos. Please enter manually or try again.';
+      setScannerError(errMessage);
     } finally {
+      if (ocrAbortControllerRef.current === controller) {
+        ocrAbortControllerRef.current = null;
+      }
       setIsScanningOcr(false);
     }
   };
@@ -1654,18 +1758,22 @@ export const MedicineForm: React.FC<MedicineFormProps> = ({
     );
   }
 
-  if (mode === 'create' && !isAdmin) {
+  if (!isAdmin) {
     return (
       <AppScreen
         headerProps={{
-          title: 'Add Medicine',
+          title: mode === 'create' ? 'Add Medicine' : 'Edit Medicine',
           showBack: true,
           onBack: handleBackPress,
         }}
       >
         <ErrorState
           title="Access Restricted"
-          message="Adding new medicines is restricted to ADMIN accounts only."
+          message={
+            mode === 'create'
+              ? 'Adding new medicines is restricted to ADMIN accounts only.'
+              : 'Editing medicines is restricted to ADMIN accounts only.'
+          }
         />
       </AppScreen>
     );
@@ -2545,12 +2653,14 @@ export const MedicineForm: React.FC<MedicineFormProps> = ({
         {/* Feature 3: Photo Scanner Modal */}
         <MedicineScannerModal
           visible={showScannerModal}
-          onClose={() => setShowScannerModal(false)}
+          onClose={handleCloseScanner}
           scannedPhotos={scannedPhotos}
           isScanningOcr={isScanningOcr}
           onCapturePhoto={handleCaptureScannerPhoto}
           onRemovePhoto={handleRemoveScannedPhoto}
           onProcessPhotos={handleProcessScannedPhotos}
+          onCancelScan={handleCancelOcrScan}
+          errorMessage={scannerError}
         />
       </AppScreen>
   );

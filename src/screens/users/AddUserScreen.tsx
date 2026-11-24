@@ -123,6 +123,7 @@ export const AddUserScreen: React.FC = () => {
 
   return (
     <AppScreen
+      scrollable={false}
       headerProps={{
         title: 'Create User',
         subtitle: 'New Staff or Administrator Account',
@@ -252,7 +253,7 @@ export const AddUserScreen: React.FC = () => {
                     </Text>
                   </View>
                   <Text style={styles.roleOptionDesc}>
-                    Can view & manage medicines, MRs, compositions, and batches.
+                    Can view catalogue, MRs, alternatives, and manage daily shortage notes.
                   </Text>
                 </TouchableOpacity>
 

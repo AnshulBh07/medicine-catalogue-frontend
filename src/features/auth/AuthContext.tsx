@@ -37,10 +37,17 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const isLoggingOutRef = useRef<boolean>(false);
+  const sessionVersionRef = useRef<number>(0);
 
   const logout = useCallback(async (): Promise<void> => {
     if (isLoggingOutRef.current) return;
     isLoggingOutRef.current = true;
+    // Invalidate any in-flight bootstrap/refresh/login operations immediately
+    sessionVersionRef.current += 1;
+    apiClient.setToken(null);
+    setToken(null);
+    setUser(null);
+
     try {
       try {
         await authService.logout();
@@ -52,6 +59,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       apiClient.setToken(null);
       setToken(null);
       setUser(null);
+      setIsLoading(false);
       isLoggingOutRef.current = false;
     }
   }, []);
@@ -59,6 +67,42 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   // Restore stored session on startup
   useEffect(() => {
     let isMounted = true;
+    const bootstrapVersion = sessionVersionRef.current;
+    const isStale = () => !isMounted || sessionVersionRef.current !== bootstrapVersion;
+
+    const clearSessionIfCurrent = async () => {
+      await storage.clearAuth();
+      if (!isStale()) {
+        apiClient.setToken(null);
+        setToken(null);
+        setUser(null);
+      }
+    };
+
+    const commitSessionIfCurrent = async (
+      nextToken: string,
+      nextUser: PublicUser,
+      nextRefreshToken?: string,
+    ): Promise<boolean> => {
+      if (isStale()) return false;
+      const writes: Promise<void>[] = [
+        storage.setToken(nextToken),
+        storage.setUser(nextUser),
+        storage.setLastActiveTime(Date.now()),
+      ];
+      if (nextRefreshToken) {
+        writes.push(storage.setRefreshToken(nextRefreshToken));
+      }
+      await Promise.all(writes);
+      if (isStale()) {
+        await storage.clearAuth();
+        return false;
+      }
+      apiClient.setToken(nextToken);
+      setToken(nextToken);
+      setUser(nextUser);
+      return true;
+    };
 
     async function bootstrap(): Promise<void> {
       try {
@@ -68,79 +112,84 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           storage.getUser(),
         ]);
 
+        if (isStale()) return;
+
         if (!storedToken && !storedRefreshToken) {
-          // No stored session credentials exist
-          if (isMounted) {
-            setIsLoading(false);
-          }
           return;
         }
 
         // Case 1: Existing access token is present and not expired
         if (storedToken && !isJwtExpired(storedToken, 0)) {
-          apiClient.setToken(storedToken);
-          if (isMounted && storedUser) {
-            setToken(storedToken);
-            setUser(storedUser);
-          }
-
-          // Validate against server to get fresh profile & ensure user is still active
+          // Validate against server with skipAuthValidation so bootstrap owns the
+          // single refresh/logout decision deterministically without double-refresh races.
           try {
-            const profileRes = await apiClient.get<{ user: PublicUser }>('/users/me');
-            if (profileRes?.user && isMounted) {
-              const freshUser = profileRes.user;
-              await storage.setUser(freshUser);
-              await storage.setLastActiveTime(Date.now());
+            const profileRes = await apiClient.get<{ user: PublicUser }>('/users/me', {
+              token: storedToken,
+              skipAuthValidation: true,
+            });
+            if (isStale()) return;
+
+            if (profileRes?.user) {
+              await commitSessionIfCurrent(storedToken, profileRes.user);
+              return;
+            }
+            if (storedUser) {
+              apiClient.setToken(storedToken);
               setToken(storedToken);
-              setUser(freshUser);
+              setUser(storedUser);
             }
           } catch (verifyErr: unknown) {
+            if (isStale()) return;
+
             const status =
               (verifyErr as { statusCode?: number; status?: number })?.statusCode ??
               (verifyErr as { status?: number })?.status;
 
-            if (status === 401 || status === 404) {
-              // Access token rejected by server or user deactivated/not found
-              // Attempt refresh if refresh token is available
+            if (status === 401 || status === 403 || status === 404) {
+              // Access token rejected or user deactivated/not found -> attempt single refresh
               if (storedRefreshToken) {
                 try {
                   const refreshRes = await authService.refresh(storedRefreshToken);
-                  if (refreshRes?.accessToken && isMounted) {
-                    await Promise.all([
-                      storage.setToken(refreshRes.accessToken),
-                      refreshRes.refreshToken
-                        ? storage.setRefreshToken(refreshRes.refreshToken)
-                        : Promise.resolve(),
-                      storage.setUser(refreshRes.user),
-                      storage.setLastActiveTime(Date.now()),
-                    ]);
-                    apiClient.setToken(refreshRes.accessToken);
-                    setToken(refreshRes.accessToken);
-                    setUser(refreshRes.user);
+                  if (isStale()) return;
+
+                  if (refreshRes?.accessToken && refreshRes.user) {
+                    await commitSessionIfCurrent(
+                      refreshRes.accessToken,
+                      refreshRes.user,
+                      refreshRes.refreshToken,
+                    );
                     return;
                   }
-                } catch {
-                  // Refresh token also rejected
-                  await storage.clearAuth();
-                  if (isMounted) {
-                    apiClient.setToken(null);
-                    setToken(null);
-                    setUser(null);
+                  await clearSessionIfCurrent();
+                  return;
+                } catch (refreshErr: unknown) {
+                  if (isStale()) return;
+                  const refreshStatus =
+                    (refreshErr as { statusCode?: number; status?: number })?.statusCode ??
+                    (refreshErr as { status?: number })?.status;
+
+                  if (refreshStatus === 401 || refreshStatus === 403 || refreshStatus === 404) {
+                    await clearSessionIfCurrent();
+                  } else if (storedUser) {
+                    // Temporary network/5xx error during fallback refresh -> preserve cached session
+                    apiClient.setToken(storedToken);
+                    setToken(storedToken);
+                    setUser(storedUser);
                   }
                   return;
                 }
               } else {
-                await storage.clearAuth();
-                if (isMounted) {
-                  apiClient.setToken(null);
-                  setToken(null);
-                  setUser(null);
-                }
+                await clearSessionIfCurrent();
                 return;
               }
             }
-            // Temporary network/server failures (e.g. offline, 500, network error) do not clear auth!
-            // Stored session and storedUser remain active.
+
+            // Temporary network/timeout/5xx failure (e.g., offline) -> preserve stored session
+            if (storedUser && !isStale()) {
+              apiClient.setToken(storedToken);
+              setToken(storedToken);
+              setUser(storedUser);
+            }
           }
           return;
         }
@@ -149,35 +198,29 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         if (storedRefreshToken) {
           try {
             const refreshRes = await authService.refresh(storedRefreshToken);
-            if (refreshRes?.accessToken && isMounted) {
-              await Promise.all([
-                storage.setToken(refreshRes.accessToken),
-                refreshRes.refreshToken
-                  ? storage.setRefreshToken(refreshRes.refreshToken)
-                  : Promise.resolve(),
-                storage.setUser(refreshRes.user),
-                storage.setLastActiveTime(Date.now()),
-              ]);
-              apiClient.setToken(refreshRes.accessToken);
-              setToken(refreshRes.accessToken);
-              setUser(refreshRes.user);
+            if (isStale()) return;
+
+            if (refreshRes?.accessToken && refreshRes.user) {
+              await commitSessionIfCurrent(
+                refreshRes.accessToken,
+                refreshRes.user,
+                refreshRes.refreshToken,
+              );
               return;
             }
+            await clearSessionIfCurrent();
+            return;
           } catch (refreshErr: unknown) {
+            if (isStale()) return;
+
             const status =
               (refreshErr as { statusCode?: number; status?: number })?.statusCode ??
               (refreshErr as { status?: number })?.status;
 
             if (status === 401 || status === 403 || status === 404) {
-              // Invalid or revoked refresh token -> clear invalid session and return to login screen
-              await storage.clearAuth();
-              if (isMounted) {
-                apiClient.setToken(null);
-                setToken(null);
-                setUser(null);
-              }
-            } else if (storedUser && isMounted) {
-              // Temporary network error during refresh -> keep cached session if available
+              await clearSessionIfCurrent();
+            } else if (storedUser) {
+              // Temporary network/timeout error during refresh -> keep cached session if available
               if (storedToken) {
                 apiClient.setToken(storedToken);
                 setToken(storedToken);
@@ -187,8 +230,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             return;
           }
         }
+
+        // Expired access token with no refresh token -> clear stale token cleanly
+        await clearSessionIfCurrent();
       } catch (storageErr) {
-        // Transient storage read issue -> do NOT destroy auth session!
+        // Transient storage read issue -> do NOT destroy auth session
         console.warn('Session bootstrap storage read warning:', storageErr);
       } finally {
         if (isMounted) {
@@ -199,7 +245,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
     if (typeof apiClient.setOnTokenRefreshed === 'function') {
       apiClient.setOnTokenRefreshed((newToken: string, freshUser: PublicUser | null) => {
-        if (isMounted) {
+        if (isMounted && !isLoggingOutRef.current) {
           setToken(newToken);
           if (freshUser) {
             setUser(freshUser);
@@ -208,24 +254,38 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       });
     }
 
-    // Auto-logout on 401 responses
+    // Auto-logout on confirmed 401 responses after bootstrap
     apiClient.setOnUnauthorized(() => {
-      void logout();
+      if (isMounted) {
+        void logout();
+      }
     });
 
     void bootstrap();
 
     return () => {
       isMounted = false;
+      apiClient.setOnUnauthorized(null);
+      if (typeof apiClient.setOnTokenRefreshed === 'function') {
+        apiClient.setOnTokenRefreshed(null);
+      }
     };
   }, [logout]);
 
   const login = useCallback(
     async (identifier: string, secret: string): Promise<void> => {
+      const startVersion = sessionVersionRef.current;
       const response = await authService.login({
         identifier: identifier.trim(),
         password: secret,
       });
+
+      // If logout occurred while login was in flight, do not restore session
+      if (sessionVersionRef.current !== startVersion) {
+        return;
+      }
+
+      sessionVersionRef.current += 1;
 
       const now = Date.now();
       const storagePromises: Promise<void>[] = [
@@ -241,6 +301,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       apiClient.setToken(response.accessToken);
       setToken(response.accessToken);
       setUser(response.user);
+      setIsLoading(false);
     },
     [],
   );

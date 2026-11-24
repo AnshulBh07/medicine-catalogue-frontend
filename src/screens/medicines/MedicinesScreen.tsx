@@ -14,6 +14,7 @@ import {
   AdvancedFilterModal,
   AppScreen,
   EmptyState,
+  ErrorState,
   FloatingActionButton,
   Icon,
   INITIAL_ADVANCED_FILTERS,
@@ -103,7 +104,10 @@ export const MedicinesScreen: React.FC = () => {
   const [mrs, setMrs] = useState<PublicMr[]>([]);
   const [salts, setSalts] = useState<PublicSalt[]>([]);
   const [compositions, setCompositions] = useState<PublicComposition[]>([]);
-  const commercialMap: Record<string, { mrp: number }> = {};
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  const skipInitialFocusFetchRef = React.useRef(true);
+  const fetchRequestSeqRef = React.useRef(0);
 
   const isNonDefaultSort = sortBy !== 'name' || sortOrder !== 'asc';
 
@@ -112,24 +116,32 @@ export const MedicinesScreen: React.FC = () => {
       currentSortBy: MedicineSortField = sortBy,
       currentSortOrder: SortOrder = sortOrder,
     ) => {
+      const requestSeq = ++fetchRequestSeqRef.current;
       try {
         setIsLoading(true);
+        setErrorMessage(null);
         const params = new URLSearchParams();
         params.append('sortBy', currentSortBy);
         params.append('sortOrder', currentSortOrder);
         const response = await apiClient.get<{ medicines: PublicMedicine[] }>(
           `/medicines?${params.toString()}`,
         );
+        if (requestSeq !== fetchRequestSeqRef.current) return;
         if (response && Array.isArray(response.medicines)) {
           setMedicines(response.medicines);
         } else {
           setMedicines([]);
         }
-      } catch {
-        setMedicines([]);
+      } catch (err: unknown) {
+        if (requestSeq !== fetchRequestSeqRef.current) return;
+        const msg =
+          err instanceof Error ? err.message : 'Unable to load medicines catalogue.';
+        setErrorMessage(msg);
       } finally {
-        setIsLoading(false);
-        setRefreshing(false);
+        if (requestSeq === fetchRequestSeqRef.current) {
+          setIsLoading(false);
+          setRefreshing(false);
+        }
       }
     },
     [sortBy, sortOrder],
@@ -138,7 +150,6 @@ export const MedicinesScreen: React.FC = () => {
   const handleSelectSort = (newSortBy: MedicineSortField, newSortOrder: SortOrder) => {
     setSortBy(newSortBy);
     setSortOrder(newSortOrder);
-    fetchMedicines(newSortBy, newSortOrder);
   };
 
   const fetchMetadata = useCallback(async () => {
@@ -168,14 +179,21 @@ export const MedicinesScreen: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    fetchMedicines();
-    fetchMetadata();
-  }, [fetchMedicines, fetchMetadata]);
+    void fetchMedicines();
+  }, [fetchMedicines]);
+
+  useEffect(() => {
+    void fetchMetadata();
+  }, [fetchMetadata]);
 
   useEffect(() => {
     const unsubscribe = navigation.addListener?.('focus', () => {
-      fetchMedicines();
-      fetchMetadata();
+      if (skipInitialFocusFetchRef.current) {
+        skipInitialFocusFetchRef.current = false;
+        return;
+      }
+      void fetchMedicines();
+      void fetchMetadata();
     });
     return unsubscribe;
   }, [navigation, fetchMedicines, fetchMetadata]);
@@ -221,9 +239,6 @@ export const MedicinesScreen: React.FC = () => {
     if (medicine.mrp !== undefined && medicine.mrp !== null) {
       return Number(medicine.mrp);
     }
-    if (commercialMap[medicine.id]) {
-      return commercialMap[medicine.id].mrp;
-    }
     // Estimated price table for catalogue medicines
     const priceMap: Record<string, number> = {
       'med-1': 25.0,
@@ -238,8 +253,8 @@ export const MedicinesScreen: React.FC = () => {
     return priceMap[medicine.id] ?? 50.0;
   };
 
-  // Safe margin value resolution for sorting
-  const getMedicineMargin = (medicine: PublicMedicine): number => {
+  // Safe margin value resolution for sorting (returns null when margin is computed server-side only)
+  const getMedicineMargin = (medicine: PublicMedicine): number | null => {
     const comm = medicine.commercialDetails;
     if (comm && comm.mrp && comm.purchaseRate !== undefined && comm.purchaseRate !== null) {
       const metrics = calculateCommercialMetrics(
@@ -258,7 +273,7 @@ export const MedicinesScreen: React.FC = () => {
       const parsed = Number(directMargin);
       if (!isNaN(parsed)) return parsed;
     }
-    return 0;
+    return null;
   };
 
   const maxCataloguePrice = useMemo(() => {
@@ -273,7 +288,7 @@ export const MedicinesScreen: React.FC = () => {
     if (highest <= 2000) return 2000;
     if (highest <= 5000) return 5000;
     return Math.ceil(highest / 500) * 500;
-  }, [medicines, commercialMap]);
+  }, [medicines]);
 
   const filteredMedicines = useMemo(() => {
     let result = [...medicines];
@@ -411,6 +426,10 @@ export const MedicinesScreen: React.FC = () => {
       if (sortBy === 'margin') {
         const mA = getMedicineMargin(a);
         const mB = getMedicineMargin(b);
+        // Preserve authoritative server-computed margin ordering when client items omit private commercial details
+        if (mA === null && mB === null) return 0;
+        if (mA === null) return 1;
+        if (mB === null) return -1;
         return sortOrder === 'asc' ? mA - mB : mB - mA;
       }
       if (sortBy === 'mrp') {
@@ -445,7 +464,6 @@ export const MedicinesScreen: React.FC = () => {
     sortOrder,
     advancedFilters,
     compositions,
-    commercialMap,
   ]);
 
   const handleCardPress = (id: string) => {
@@ -558,6 +576,13 @@ export const MedicinesScreen: React.FC = () => {
       {/* Medicine Cards List */}
       {isLoading && medicines.length === 0 ? (
         <LoadingIndicator message="Loading medicines catalogue..." />
+      ) : errorMessage && medicines.length === 0 ? (
+        <ErrorState
+          title="Unable to Load Medicines"
+          message={errorMessage}
+          onRetry={() => void fetchMedicines()}
+          testID="medicines-error-state"
+        />
       ) : filteredMedicines.length === 0 ? (
         <EmptyState
           title="No medicines found"
@@ -666,12 +691,14 @@ export const MedicinesScreen: React.FC = () => {
         </ScrollView>
       )}
 
-      {/* Floating Action Button for Add Medicine */}
-      <FloatingActionButton
-        onPress={handleAddMedicine}
-        accessibilityLabel="Add Medicine"
-        testID="add-medicine-fab"
-      />
+      {/* Floating Action Button for Add Medicine (ADMIN only) */}
+      {isAdmin ? (
+        <FloatingActionButton
+          onPress={handleAddMedicine}
+          accessibilityLabel="Add Medicine"
+          testID="add-medicine-fab"
+        />
+      ) : null}
 
       {/* Advanced Catalogue Filter Popup (8 Catalogue Filters, No Form, No Inventory) */}
       <AdvancedFilterModal

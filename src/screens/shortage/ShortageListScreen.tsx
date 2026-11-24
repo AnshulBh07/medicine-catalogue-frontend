@@ -85,6 +85,7 @@ export const ShortageListScreen: React.FC = () => {
     route.params?.initialDate || getUtcTodayStr(),
   );
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState<string>('');
   const [data, setData] = useState<DailyShortageResult | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
@@ -94,6 +95,7 @@ export const ShortageListScreen: React.FC = () => {
   const [showDatePickerModal, setShowDatePickerModal] = useState<boolean>(false);
 
   const isMountedRef = React.useRef<boolean>(true);
+  const requestSeqRef = React.useRef<number>(0);
 
   React.useEffect(() => {
     isMountedRef.current = true;
@@ -102,8 +104,20 @@ export const ShortageListScreen: React.FC = () => {
     };
   }, []);
 
+  React.useEffect(() => {
+    if (!searchQuery.trim()) {
+      setDebouncedSearchQuery('');
+      return;
+    }
+    const timer = setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
   const fetchShortages = useCallback(
     async (isRefresh = false) => {
+      const requestSeq = ++requestSeqRef.current;
       try {
         if (isMountedRef.current) {
           if (isRefresh) {
@@ -115,22 +129,22 @@ export const ShortageListScreen: React.FC = () => {
         }
         const result = await shortageService.getDailyShortages(
           selectedDate,
-          searchQuery.trim() || undefined,
+          debouncedSearchQuery.trim() || undefined,
         );
-        if (!isMountedRef.current) return;
+        if (!isMountedRef.current || requestSeq !== requestSeqRef.current) return;
         setData(result);
       } catch (err) {
-        if (!isMountedRef.current) return;
+        if (!isMountedRef.current || requestSeq !== requestSeqRef.current) return;
         const msg = err instanceof Error ? err.message : 'Failed to load shortage list';
         setError(msg);
       } finally {
-        if (isMountedRef.current) {
+        if (isMountedRef.current && requestSeq === requestSeqRef.current) {
           setIsLoading(false);
           setIsRefreshing(false);
         }
       }
     },
-    [selectedDate, searchQuery],
+    [selectedDate, debouncedSearchQuery],
   );
 
   useFocusEffect(

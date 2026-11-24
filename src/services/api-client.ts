@@ -87,68 +87,160 @@ export function isJwtExpired(token: string, clockSkewSeconds: number = 0): boole
   return nowInSeconds >= payload.exp - clockSkewSeconds;
 }
 
+export const DEFAULT_REQUEST_TIMEOUT_MS = 15000;
+export const UPLOAD_REQUEST_TIMEOUT_MS = 60000;
+
 export interface RequestOptions {
   headers?: Record<string, string>;
   token?: string | null;
   signal?: AbortSignal;
+  timeoutMs?: number;
   skipAuthValidation?: boolean;
   isRetry?: boolean;
+}
+
+interface RefreshAttemptResult {
+  token: string | null;
+  unauthorizedCleared: boolean;
 }
 
 class ApiClient {
   private baseUrl: string;
   private currentToken: string | null = null;
+  private authEpoch: number = 0;
   private onUnauthorizedCallback: (() => void) | null = null;
   private onTokenRefreshedCallback: ((token: string, user: PublicUser | null) => void) | null = null;
   private authVerificationPromise: Promise<boolean> | null = null;
-  private refreshPromise: Promise<string | null> | null = null;
+  private refreshPromise: Promise<RefreshAttemptResult> | null = null;
 
   constructor(baseUrl: string) {
     this.baseUrl = baseUrl.replace(/\/$/, '');
   }
 
   public setToken(token: string | null): void {
+    if (token === null) {
+      this.authEpoch += 1;
+    }
     this.currentToken = token;
   }
 
-  public setOnUnauthorized(callback: () => void): void {
+  public setOnUnauthorized(callback: (() => void) | null): void {
     this.onUnauthorizedCallback = callback;
   }
 
-  public setOnTokenRefreshed(callback: (token: string, user: PublicUser | null) => void): void {
+  public setOnTokenRefreshed(
+    callback: ((token: string, user: PublicUser | null) => void) | null,
+  ): void {
     this.onTokenRefreshedCallback = callback;
   }
 
-  public async refreshTokens(): Promise<string | null> {
+  private async fetchWithTimeout(
+    url: string,
+    init: RequestInit,
+    timeoutMs: number = DEFAULT_REQUEST_TIMEOUT_MS,
+  ): Promise<Response> {
+    const externalSignal = init.signal;
+    if (externalSignal?.aborted) {
+      throw new ApiError(0, 'REQUEST_CANCELLED', 'Request was cancelled');
+    }
+
+    const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    let timedOut = false;
+    let callerAborted = false;
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+
+    const onExternalAbort = () => {
+      callerAborted = true;
+      controller?.abort();
+    };
+
+    if (externalSignal && controller) {
+      externalSignal.addEventListener('abort', onExternalAbort, { once: true });
+    }
+
+    if (controller && timeoutMs > 0 && Number.isFinite(timeoutMs)) {
+      timeoutId = setTimeout(() => {
+        timedOut = true;
+        controller.abort();
+      }, timeoutMs);
+    }
+
+    try {
+      return await fetch(url, {
+        ...init,
+        signal: controller ? controller.signal : externalSignal,
+      });
+    } catch (err) {
+      if (timedOut) {
+        throw new ApiError(
+          408,
+          'REQUEST_TIMEOUT',
+          'Request timed out. Please check your connection and try again.',
+        );
+      }
+      if (
+        callerAborted ||
+        externalSignal?.aborted ||
+        (err instanceof Error && err.name === 'AbortError')
+      ) {
+        throw new ApiError(0, 'REQUEST_CANCELLED', 'Request was cancelled');
+      }
+      const message =
+        err instanceof Error ? err.message : 'Network request failed';
+      throw new ApiError(0, 'NETWORK_ERROR', `Unable to connect to server: ${message}`);
+    } finally {
+      if (timeoutId !== null) {
+        clearTimeout(timeoutId);
+      }
+      if (externalSignal && controller) {
+        externalSignal.removeEventListener('abort', onExternalAbort);
+      }
+    }
+  }
+
+  private async refreshTokensInternal(): Promise<RefreshAttemptResult> {
     if (this.refreshPromise) {
       return this.refreshPromise;
     }
 
-    this.refreshPromise = (async () => {
+    const startEpoch = this.authEpoch;
+
+    this.refreshPromise = (async (): Promise<RefreshAttemptResult> => {
       try {
         const storedRefreshToken = await storage.getRefreshToken();
-        if (!storedRefreshToken) {
-          return null;
+        if (!storedRefreshToken || this.authEpoch !== startEpoch) {
+          return { token: null, unauthorizedCleared: false };
         }
 
-        const response = await fetch(`${this.baseUrl}/auth/refresh`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Accept: 'application/json',
+        const response = await this.fetchWithTimeout(
+          `${this.baseUrl}/auth/refresh`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Accept: 'application/json',
+            },
+            body: JSON.stringify({ refreshToken: storedRefreshToken }),
           },
-          body: JSON.stringify({ refreshToken: storedRefreshToken }),
-        });
+          DEFAULT_REQUEST_TIMEOUT_MS,
+        );
+
+        if (this.authEpoch !== startEpoch) {
+          return { token: null, unauthorizedCleared: false };
+        }
 
         if (!response.ok) {
-          if (response.status === 401) {
+          if (response.status === 401 || response.status === 403 || response.status === 404) {
             await storage.clearAuth();
-            this.setToken(null);
-            if (this.onUnauthorizedCallback) {
-              this.onUnauthorizedCallback();
+            if (this.authEpoch === startEpoch) {
+              this.currentToken = null;
+              if (this.onUnauthorizedCallback) {
+                this.onUnauthorizedCallback();
+              }
+              return { token: null, unauthorizedCleared: true };
             }
           }
-          return null;
+          return { token: null, unauthorizedCleared: false };
         }
 
         const data = (await response.json()) as {
@@ -156,6 +248,10 @@ class ApiClient {
           refreshToken?: string;
           user?: PublicUser;
         };
+
+        if (this.authEpoch !== startEpoch) {
+          return { token: null, unauthorizedCleared: false };
+        }
 
         if (data?.accessToken) {
           await storage.setToken(data.accessToken);
@@ -165,22 +261,31 @@ class ApiClient {
           if (data.user) {
             await storage.setUser(data.user);
           }
-          this.setToken(data.accessToken);
+          if (this.authEpoch !== startEpoch) {
+            await storage.clearAuth();
+            return { token: null, unauthorizedCleared: false };
+          }
+          this.currentToken = data.accessToken;
           if (this.onTokenRefreshedCallback) {
             this.onTokenRefreshedCallback(data.accessToken, data.user ?? null);
           }
-          return data.accessToken;
+          return { token: data.accessToken, unauthorizedCleared: false };
         }
-        return null;
+        return { token: null, unauthorizedCleared: false };
       } catch {
-        // Network failure during refresh -> do NOT clear auth credentials
-        return null;
+        // Network/timeout failure during refresh -> do NOT clear auth credentials
+        return { token: null, unauthorizedCleared: false };
       } finally {
         this.refreshPromise = null;
       }
     })();
 
     return this.refreshPromise;
+  }
+
+  public async refreshTokens(): Promise<string | null> {
+    const result = await this.refreshTokensInternal();
+    return result.token;
   }
 
   private async verifySession(token: string): Promise<boolean> {
@@ -190,22 +295,26 @@ class ApiClient {
 
     this.authVerificationPromise = (async () => {
       try {
-        const response = await fetch(`${this.baseUrl}/users/me`, {
-          method: 'GET',
-          headers: {
-            Accept: 'application/json',
-            Authorization: `Bearer ${token}`,
+        const response = await this.fetchWithTimeout(
+          `${this.baseUrl}/users/me`,
+          {
+            method: 'GET',
+            headers: {
+              Accept: 'application/json',
+              Authorization: `Bearer ${token}`,
+            },
           },
-        });
+          DEFAULT_REQUEST_TIMEOUT_MS,
+        );
 
-        if (response.status === 401) {
+        if (response.status === 401 || response.status === 403 || response.status === 404) {
           return false;
         }
 
-        // Return true if status is OK or non-401 (e.g. temporary server issue)
-        return response.ok || response.status !== 401;
+        // Return true if status is OK or temporary 5xx server issue
+        return true;
       } catch {
-        // Network failure reaching server -> do NOT assume session is dead
+        // Network/timeout failure reaching server -> do NOT assume session is dead
         return true;
       } finally {
         this.authVerificationPromise = null;
@@ -224,6 +333,7 @@ class ApiClient {
     const cleanPath = path.startsWith('/') ? path : `/${path}`;
     const url = `${this.baseUrl}${cleanPath}`;
     const isAuthEndpoint = cleanPath === '/auth/login' || cleanPath === '/auth/refresh';
+    const requestEpoch = this.authEpoch;
 
     const headers: Record<string, string> = {
       Accept: 'application/json',
@@ -237,16 +347,16 @@ class ApiClient {
     let token = options?.token ?? this.currentToken;
     if (!token && !isAuthEndpoint) {
       token = await storage.getToken();
-      if (token) {
+      if (token && this.authEpoch === requestEpoch) {
         this.currentToken = token;
       }
     }
 
     // Proactively refresh expired token before making the request if not already retrying
     if (token && !isAuthEndpoint && !options?.isRetry && !options?.skipAuthValidation && isJwtExpired(token, 30)) {
-      const refreshedToken = await this.refreshTokens();
-      if (refreshedToken) {
-        token = refreshedToken;
+      const refreshResult = await this.refreshTokensInternal();
+      if (refreshResult.token) {
+        token = refreshResult.token;
       }
     }
 
@@ -254,22 +364,19 @@ class ApiClient {
       headers.Authorization = `Bearer ${token}`;
     }
 
-    let response: Response;
-    try {
-      response = await fetch(url, {
+    const response = await this.fetchWithTimeout(
+      url,
+      {
         method,
         headers,
         body: body !== undefined ? JSON.stringify(body) : undefined,
         signal: options?.signal,
-      });
-    } catch (err) {
-      const message =
-        err instanceof Error ? err.message : 'Network request failed';
-      throw new ApiError(0, 'NETWORK_ERROR', `Unable to connect to server: ${message}`);
-    }
+      },
+      options?.timeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS,
+    );
 
     // On successful authenticated response, touch last active time to prevent inactivity logout during active use
-    if (response.ok && token) {
+    if (response.ok && token && this.authEpoch === requestEpoch) {
       void storage.setLastActiveTime();
     }
 
@@ -284,44 +391,54 @@ class ApiClient {
     }
 
     if (!response.ok) {
-      if (response.status === 401 && !isAuthEndpoint && token && !options?.skipAuthValidation) {
+      if (
+        response.status === 401 &&
+        !isAuthEndpoint &&
+        token &&
+        !options?.skipAuthValidation &&
+        this.authEpoch === requestEpoch
+      ) {
+        let unauthorizedAlreadyHandled = false;
         // Attempt refresh if not already retrying
         if (!options?.isRetry) {
-          const refreshedToken = await this.refreshTokens();
-          if (refreshedToken) {
+          const refreshResult = await this.refreshTokensInternal();
+          if (refreshResult.token) {
             return this.request<T>(path, method, body, {
               ...options,
-              token: refreshedToken,
+              token: refreshResult.token,
               isRetry: true,
             });
           }
+          unauthorizedAlreadyHandled = refreshResult.unauthorizedCleared;
         }
 
-        if (isJwtExpired(token)) {
-          // Token is definitively expired by its timestamp and refresh failed
-          if (this.onUnauthorizedCallback) {
-            this.onUnauthorizedCallback();
-          }
-        } else if (cleanPath === '/users/me') {
-          // Profile verification endpoint returned 401 and refresh was not available/failed
-          if (this.onUnauthorizedCallback) {
-            this.onUnauthorizedCallback();
-          }
-        } else {
-          // Token is not expired by timestamp; verify authoritatively before logging out
-          const isSessionValid = await this.verifySession(token);
-          if (isSessionValid) {
-            // Transient 401 on endpoint or server glitch; retry once if not already retrying
-            if (!options?.isRetry) {
-              return this.request<T>(path, method, body, {
-                ...options,
-                isRetry: true,
-              });
-            }
-          } else {
-            // Server confirmed session is invalid
+        if (!unauthorizedAlreadyHandled && this.authEpoch === requestEpoch) {
+          if (isJwtExpired(token)) {
+            // Token is definitively expired by its timestamp and refresh failed
             if (this.onUnauthorizedCallback) {
               this.onUnauthorizedCallback();
+            }
+          } else if (cleanPath === '/users/me') {
+            // Profile verification endpoint returned 401 and refresh was not available/failed
+            if (this.onUnauthorizedCallback) {
+              this.onUnauthorizedCallback();
+            }
+          } else {
+            // Token is not expired by timestamp; verify authoritatively before logging out
+            const isSessionValid = await this.verifySession(token);
+            if (isSessionValid) {
+              // Transient 401 on endpoint or server glitch; retry once if not already retrying
+              if (!options?.isRetry) {
+                return this.request<T>(path, method, body, {
+                  ...options,
+                  isRetry: true,
+                });
+              }
+            } else if (this.authEpoch === requestEpoch) {
+              // Server confirmed session is invalid
+              if (this.onUnauthorizedCallback) {
+                this.onUnauthorizedCallback();
+              }
             }
           }
         }

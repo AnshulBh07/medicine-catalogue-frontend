@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
+  Linking,
   Platform,
   ScrollView,
   StyleSheet,
@@ -68,8 +69,29 @@ export const EditProfileScreen: React.FC = () => {
     try {
       setGeneralError(null);
       const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (!permissionResult.granted && !permissionResult.canAskAgain && Platform.OS !== 'web') {
-        setGeneralError('Permission to access photo gallery was denied. Please allow gallery access in device settings.');
+      if (!permissionResult.granted && Platform.OS !== 'web') {
+        if (permissionResult.canAskAgain === false) {
+          setGeneralError(
+            'Photo gallery permission is disabled in device settings. Open Settings to allow access, or continue updating your profile details manually.',
+          );
+          Alert.alert(
+            'Photo Library Permission Needed',
+            'Gallery access has been permanently denied. Please enable Photos permission in your device settings to upload a profile photo.',
+            [
+              { text: 'Cancel', style: 'cancel' },
+              {
+                text: 'Open Settings',
+                onPress: () => {
+                  void Linking.openSettings();
+                },
+              },
+            ],
+          );
+        } else {
+          setGeneralError(
+            'Photo gallery permission was denied. Please allow access to choose a profile photo.',
+          );
+        }
         return;
       }
 
@@ -203,6 +225,7 @@ export const EditProfileScreen: React.FC = () => {
 
   return (
     <AppScreen
+      scrollable={false}
       headerProps={{
         title: 'Edit Profile',
         subtitle: 'Update your personal details',

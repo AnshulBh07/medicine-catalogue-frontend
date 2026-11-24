@@ -179,9 +179,9 @@ jest.mock('../src/services/api-client', () => ({
 
 jest.mock('../src/features/auth', () => ({
   useAuth: () => ({
-    isAdmin: false,
-    user: null,
-    isAuthenticated: false,
+    isAdmin: true,
+    user: { id: 'admin-1', name: 'Admin Test', role: 'ADMIN' },
+    isAuthenticated: true,
   }),
 }));
 

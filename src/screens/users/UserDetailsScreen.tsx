@@ -211,6 +211,7 @@ export const UserDetailsScreen: React.FC = () => {
 
   return (
     <AppScreen
+      scrollable={false}
       headerProps={{
         title: 'User Details',
         subtitle: isSelf ? 'Your Account (Admin Session)' : user.name,

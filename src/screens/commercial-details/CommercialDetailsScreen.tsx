@@ -54,8 +54,22 @@ export const CommercialDetailsScreen: React.FC = () => {
     };
   }, []);
 
+  const requestSeqRef = useRef(0);
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    return () => {
+      abortControllerRef.current?.abort();
+    };
+  }, []);
+
   const fetchMedicines = useCallback(async (query: string) => {
     if (!isMountedRef.current) return;
+    const requestSeq = ++requestSeqRef.current;
+    abortControllerRef.current?.abort();
+    const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    abortControllerRef.current = controller;
+
     try {
       setIsLoading(true);
       setErrorMessage(null);
@@ -67,20 +81,26 @@ export const CommercialDetailsScreen: React.FC = () => {
       params.append('limit', '50');
 
       const url = `/medicines?${params.toString()}`;
-      const response = await apiClient.get<{ medicines: PublicMedicine[] }>(url);
+      const response = await apiClient.get<{ medicines: PublicMedicine[] }>(
+        url,
+        controller ? { signal: controller.signal } : undefined,
+      );
 
-      if (isMountedRef.current) {
+      if (isMountedRef.current && requestSeq === requestSeqRef.current) {
         if (response && Array.isArray(response.medicines)) {
           setMedicines(response.medicines);
         }
       }
     } catch (err: unknown) {
-      if (isMountedRef.current) {
+      if (isMountedRef.current && requestSeq === requestSeqRef.current) {
+        if ((err as { code?: string })?.code === 'REQUEST_CANCELLED') {
+          return;
+        }
         const msg = err instanceof Error ? err.message : 'Failed to fetch medicines';
         setErrorMessage(msg);
       }
     } finally {
-      if (isMountedRef.current) {
+      if (isMountedRef.current && requestSeq === requestSeqRef.current) {
         setIsLoading(false);
         setRefreshing(false);
       }
@@ -89,16 +109,20 @@ export const CommercialDetailsScreen: React.FC = () => {
 
   useEffect(() => {
     if (isAdmin) {
-      fetchMedicines(search);
+      void fetchMedicines('');
     }
-  }, [fetchMedicines, isAdmin, search]);
+  }, [fetchMedicines, isAdmin]);
 
   const handleSearchChange = (text: string) => {
     setSearch(text);
     if (searchTimer.current) clearTimeout(searchTimer.current);
+    if (!text.trim()) {
+      void fetchMedicines('');
+      return;
+    }
     searchTimer.current = setTimeout(() => {
-      fetchMedicines(text);
-    }, 250);
+      void fetchMedicines(text);
+    }, 300);
   };
 
   const handleRefresh = () => {

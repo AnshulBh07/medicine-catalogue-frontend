@@ -1,4 +1,55 @@
-import { apiClient } from './api-client';
+import { apiClient, ApiError, UPLOAD_REQUEST_TIMEOUT_MS } from './api-client';
+
+const DIRECT_UPLOAD_TIMEOUT_MS = UPLOAD_REQUEST_TIMEOUT_MS || 60000;
+
+async function putDirectUploadWithTimeout(
+  uploadUrl: string,
+  contentType: string,
+  body: Blob | ArrayBuffer,
+  timeoutMs: number = DIRECT_UPLOAD_TIMEOUT_MS,
+): Promise<Response> {
+  const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  let timedOut = false;
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+
+  if (controller && timeoutMs > 0 && Number.isFinite(timeoutMs)) {
+    timeoutId = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, timeoutMs);
+  }
+
+  try {
+    return await fetch(uploadUrl, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': contentType,
+      },
+      body,
+      ...(controller ? { signal: controller.signal } : {}),
+    });
+  } catch (err) {
+    if (timedOut) {
+      if (typeof ApiError === 'function') {
+        throw new ApiError(
+          408,
+          'REQUEST_TIMEOUT',
+          'Image upload timed out. Please check your connection and try again.',
+        );
+      }
+      const timeoutError = new Error(
+        'Image upload timed out. Please check your connection and try again.',
+        { cause: err },
+      );
+      throw timeoutError;
+    }
+    throw err;
+  } finally {
+    if (timeoutId !== null) {
+      clearTimeout(timeoutId);
+    }
+  }
+}
 
 export interface SelectedMedicineImage {
   uri: string;
@@ -98,14 +149,12 @@ export const uploadMedicinePackagingImage = async (
   // 2. Read local binary body
   const body = await getImageUploadBody(image, contentType);
 
-  // 3. Upload directly to Cloudflare R2
-  const uploadResponse = await fetch(presignedData.uploadUrl, {
-    method: 'PUT',
-    headers: {
-      'Content-Type': contentType,
-    },
+  // 3. Upload directly to Cloudflare R2 with upload timeout
+  const uploadResponse = await putDirectUploadWithTimeout(
+    presignedData.uploadUrl,
+    contentType,
     body,
-  });
+  );
 
   if (!uploadResponse.ok) {
     throw new Error(
@@ -141,14 +190,12 @@ export const uploadProfileImage = async (
   // 2. Read local binary body
   const body = await getImageUploadBody(image, contentType);
 
-  // 3. Upload directly to Cloudflare R2
-  const uploadResponse = await fetch(presignedData.uploadUrl, {
-    method: 'PUT',
-    headers: {
-      'Content-Type': contentType,
-    },
+  // 3. Upload directly to Cloudflare R2 with upload timeout
+  const uploadResponse = await putDirectUploadWithTimeout(
+    presignedData.uploadUrl,
+    contentType,
     body,
-  });
+  );
 
   if (!uploadResponse.ok) {
     throw new Error(

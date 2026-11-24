@@ -196,6 +196,7 @@ export const EditUserScreen: React.FC = () => {
 
   return (
     <AppScreen
+      scrollable={false}
       headerProps={{
         title: 'Edit User',
         subtitle: `Editing: ${initialUser.name}`,

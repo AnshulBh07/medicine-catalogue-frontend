@@ -47,6 +47,7 @@ export const UsersScreen: React.FC = () => {
   const { isAdmin } = useAuth();
 
   const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [activeFilter, setActiveFilter] = useState<FilterOption>('ALL');
   const [sortBy, setSortBy] = useState<UserSortField>('name');
   const [sortOrder, setSortOrder] = useState<SortOrder>('asc');
@@ -58,6 +59,7 @@ export const UsersScreen: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
 
   const isMountedRef = React.useRef(true);
+  const requestSeqRef = React.useRef(0);
 
   React.useEffect(() => {
     isMountedRef.current = true;
@@ -66,7 +68,19 @@ export const UsersScreen: React.FC = () => {
     };
   }, []);
 
+  React.useEffect(() => {
+    if (!search.trim()) {
+      setDebouncedSearch('');
+      return;
+    }
+    const timer = setTimeout(() => {
+      setDebouncedSearch(search);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [search]);
+
   const fetchUsers = useCallback(async () => {
+    const requestSeq = ++requestSeqRef.current;
     try {
       if (!isMountedRef.current) return;
       setError(null);
@@ -79,26 +93,26 @@ export const UsersScreen: React.FC = () => {
       if (activeFilter === 'INACTIVE') activeParam = false;
 
       const response = await userAdminService.listUsers({
-        search: search.trim() || undefined,
+        search: debouncedSearch.trim() || undefined,
         role: roleParam,
         active: activeParam,
         sortBy,
         sortOrder,
       });
 
-      if (!isMountedRef.current) return;
+      if (!isMountedRef.current || requestSeq !== requestSeqRef.current) return;
       setUsers(response.users);
     } catch (err) {
-      if (!isMountedRef.current) return;
+      if (!isMountedRef.current || requestSeq !== requestSeqRef.current) return;
       const msg = err instanceof Error ? err.message : 'Failed to load user accounts';
       setError(msg);
     } finally {
-      if (isMountedRef.current) {
+      if (isMountedRef.current && requestSeq === requestSeqRef.current) {
         setIsLoading(false);
         setIsRefreshing(false);
       }
     }
-  }, [search, activeFilter, sortBy, sortOrder]);
+  }, [debouncedSearch, activeFilter, sortBy, sortOrder]);
 
   useFocusEffect(
     useCallback(() => {

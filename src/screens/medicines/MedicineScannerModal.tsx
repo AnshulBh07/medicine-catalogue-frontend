@@ -30,6 +30,8 @@ export interface MedicineScannerModalProps {
   onCapturePhoto: (source: 'camera' | 'library') => void;
   onRemovePhoto: (index: number) => void;
   onProcessPhotos: () => void;
+  onCancelScan?: () => void;
+  errorMessage?: string | null;
   testID?: string;
 }
 
@@ -43,6 +45,8 @@ export const MedicineScannerModal: React.FC<MedicineScannerModalProps> = ({
   onCapturePhoto,
   onRemovePhoto,
   onProcessPhotos,
+  onCancelScan,
+  errorMessage,
   testID = 'medicine-scanner-modal',
 }) => {
   const [modalVisible, setModalVisible] = useState(visible);
@@ -210,6 +214,14 @@ export const MedicineScannerModal: React.FC<MedicineScannerModalProps> = ({
             </TouchableOpacity>
           </View>
 
+          {/* Inline Scanner Error Banner */}
+          {errorMessage ? (
+            <View style={styles.scannerErrorBanner} testID="scanner-modal-error">
+              <Icon name="warning" size={16} color="#B91C1C" />
+              <Text style={styles.scannerErrorText}>{errorMessage}</Text>
+            </View>
+          ) : null}
+
           {/* Photos Preview Horizontal Gallery */}
           <View style={styles.scannerPhotosContainer}>
             {scannedPhotos.length === 0 ? (
@@ -228,7 +240,7 @@ export const MedicineScannerModal: React.FC<MedicineScannerModalProps> = ({
               >
                 {scannedPhotos.map((photo, idx) => (
                   <View
-                    key={idx}
+                    key={`${photo.uri}-${idx}`}
                     style={styles.scannerThumbnailItem}
                     testID={`scanned-photo-card-${idx}`}
                   >
@@ -239,10 +251,16 @@ export const MedicineScannerModal: React.FC<MedicineScannerModalProps> = ({
                       </Text>
                       <TouchableOpacity
                         onPress={() => onRemovePhoto(idx)}
-                        style={styles.scannerRemovePhotoBtn}
+                        disabled={isScanningOcr}
+                        style={[
+                          styles.scannerRemovePhotoBtn,
+                          isScanningOcr && styles.scannerRemovePhotoBtnDisabled,
+                        ]}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Remove photo ${idx + 1}`}
                         testID={`remove-photo-${idx}`}
                       >
-                        <Icon name="delete" size={14} color="#EF4444" />
+                        <Icon name="delete" size={14} color={isScanningOcr ? '#9CA3AF' : '#EF4444'} />
                       </TouchableOpacity>
                     </View>
                   </View>
@@ -299,6 +317,17 @@ export const MedicineScannerModal: React.FC<MedicineScannerModalProps> = ({
                 </Text>
               )}
             </TouchableOpacity>
+            {isScanningOcr && onCancelScan ? (
+              <TouchableOpacity
+                style={styles.scannerCancelBtn}
+                onPress={onCancelScan}
+                accessibilityRole="button"
+                accessibilityLabel="Cancel scan"
+                testID="btn-cancel-scanner-ocr"
+              >
+                <Text style={styles.scannerCancelBtnText}>Cancel Scan</Text>
+              </TouchableOpacity>
+            ) : null}
           </View>
         </Animated.View>
       </View>
@@ -447,8 +476,44 @@ const styles = StyleSheet.create({
     fontSize: fontSizes.xs,
     fontWeight: fontWeights.semibold,
   },
+  scannerErrorBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    borderRadius: borderRadius.md,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs + 2,
+    marginBottom: spacing.sm,
+  },
+  scannerErrorText: {
+    flex: 1,
+    fontSize: fontSizes.xs,
+    color: '#B91C1C',
+    fontWeight: fontWeights.medium,
+  },
+  scannerRemovePhotoBtnDisabled: {
+    opacity: 0.4,
+  },
   scannerFooterActions: {
     marginTop: spacing.xs,
+    gap: spacing.xs,
+  },
+  scannerCancelBtn: {
+    paddingVertical: 10,
+    borderRadius: borderRadius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FECACA',
+  },
+  scannerCancelBtnText: {
+    color: '#B91C1C',
+    fontSize: fontSizes.xs,
+    fontWeight: fontWeights.semibold,
   },
   scannerProcessBtn: {
     backgroundColor: colors.primary,

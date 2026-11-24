@@ -74,14 +74,21 @@ export const MrDetailsScreen: React.FC = () => {
     }
   }, [id]);
 
+  const skipInitialFocusRef = useRef(true);
+
   useEffect(() => {
-    fetchMrDetails();
+    skipInitialFocusRef.current = true;
+    void fetchMrDetails();
   }, [fetchMrDetails]);
 
-  // Refresh on focus in case it was edited or medicines changed
+  // Refresh on subsequent focus in case it was edited or medicines changed
   useEffect(() => {
     const unsubscribe = navigation.addListener?.('focus', () => {
-      fetchMrDetails();
+      if (skipInitialFocusRef.current) {
+        skipInitialFocusRef.current = false;
+        return;
+      }
+      void fetchMrDetails();
     });
     return unsubscribe;
   }, [navigation, fetchMrDetails]);

@@ -163,6 +163,7 @@ export const AttendanceDashboardScreen: React.FC = () => {
 
   return (
     <AppScreen
+      scrollable={false}
       headerProps={{
         title: 'Attendance Dashboard',
         subtitle: 'Overview of staff attendance & payroll',

@@ -1,5 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  Alert,
+  Linking,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -341,22 +343,45 @@ export const DashboardScreen: React.FC = () => {
     }
   }, []);
 
-  const loadLocationAndWeather = useCallback(async (force = false) => {
-    try {
-      const resolvedLoc = await resolveLocation();
-      setLocation(resolvedLoc);
+  const loadLocationAndWeather = useCallback(
+    async (force = false, requestPermission = false) => {
+      try {
+        const resolvedLoc = await resolveLocation({ requestPermission });
+        setLocation(resolvedLoc);
 
-      const weatherData = await fetchWeather(
-        resolvedLoc.latitude,
-        resolvedLoc.longitude,
-        resolvedLoc.locationName,
-        force,
-      );
-      setWeather(weatherData);
-    } catch {
-      // Gracefully handled inside the services
-    }
-  }, []);
+        if (requestPermission && resolvedLoc.permissionStatus === 'permanently_denied') {
+          Alert.alert(
+            'Location Permission Disabled',
+            'Location access is disabled in device settings. Open Settings to enable live location and local weather, or continue using the default location.',
+            [
+              { text: 'Not Now', style: 'cancel' },
+              {
+                text: 'Open Settings',
+                onPress: () => {
+                  void Linking.openSettings();
+                },
+              },
+            ],
+          );
+        }
+
+        const weatherData = await fetchWeather(
+          resolvedLoc.latitude,
+          resolvedLoc.longitude,
+          resolvedLoc.locationName,
+          force,
+        );
+        setWeather(weatherData);
+      } catch {
+        // Gracefully handled inside the services
+      }
+    },
+    [],
+  );
+
+  const handleLocationPress = useCallback(() => {
+    void loadLocationAndWeather(true, true);
+  }, [loadLocationAndWeather]);
 
   const refreshUserRef = useRef(refreshUser);
   refreshUserRef.current = refreshUser;
@@ -370,11 +395,10 @@ export const DashboardScreen: React.FC = () => {
     }
   }, []);
 
-  // Load location, weather, and unread count on dashboard mount
+  // Load location and weather on dashboard mount (unread count is synced in useFocusEffect below)
   useEffect(() => {
     void loadLocationAndWeather(false);
-    void loadUnreadCount();
-  }, [loadLocationAndWeather, loadUnreadCount]);
+  }, [loadLocationAndWeather]);
 
   const handleRefresh = useCallback(async () => {
     setIsRefreshing(true);
@@ -625,8 +649,15 @@ export const DashboardScreen: React.FC = () => {
           {/* Vertical Divider 2 */}
           <View style={styles.statusColDivider} />
 
-          {/* Column 3: Location */}
-          <View style={[styles.statusCol, styles.statusColLocation]} testID="dashboard-status-location">
+          {/* Column 3: Location (tap to refresh or request permission) */}
+          <TouchableOpacity
+            style={[styles.statusCol, styles.statusColLocation]}
+            onPress={handleLocationPress}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel={`Location: ${location.locationName}. Tap to update location`}
+            testID="dashboard-status-location"
+          >
             <View style={styles.statusIconBoxGreen}>
               <Icon name="location" size={14} color="#047857" />
             </View>
@@ -638,7 +669,7 @@ export const DashboardScreen: React.FC = () => {
                 {location.locationName}
               </Text>
             </View>
-          </View>
+          </TouchableOpacity>
         </View>
       </View>
 

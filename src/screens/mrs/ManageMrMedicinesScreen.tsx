@@ -15,10 +15,12 @@ import {
   AppScreen,
   Button,
   EmptyState,
+  ErrorState,
   Icon,
   LoadingIndicator,
   SearchInput,
 } from '../../components';
+import { useAuth } from '../../features/auth';
 import { apiClient } from '../../services/api-client';
 import {
   borderRadius,
@@ -37,6 +39,7 @@ export const ManageMrMedicinesScreen: React.FC = () => {
   const navigation = useNavigation<NavigationProp>();
   const route = useRoute<ManageMrMedicinesRouteProp>();
   const { mrId, mrName } = route.params;
+  const { isAdmin } = useAuth();
 
   // Selection state (Set of medicine IDs)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -45,7 +48,7 @@ export const ManageMrMedicinesScreen: React.FC = () => {
   // Search & Catalogue medicines state
   const [search, setSearch] = useState('');
   const [medicines, setMedicines] = useState<PublicMedicine[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(isAdmin);
   const [isSearching, setIsSearching] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -63,6 +66,10 @@ export const ManageMrMedicinesScreen: React.FC = () => {
 
   // Fetch initial assigned medicines for this MR & all available medicines
   const loadInitialData = useCallback(async () => {
+    if (!isAdmin) {
+      setIsLoading(false);
+      return;
+    }
     try {
       setIsLoading(true);
       setErrorMessage(null);
@@ -253,6 +260,24 @@ export const ManageMrMedicinesScreen: React.FC = () => {
     }
     return false;
   }, [selectedIds, initialAssignedIds]);
+
+  if (!isAdmin) {
+    return (
+      <AppScreen
+        headerProps={{
+          title: 'Manage Medicines',
+          showBack: true,
+          onBack: () => navigation.goBack(),
+        }}
+      >
+        <ErrorState
+          title="Access Restricted"
+          message="Assigning MR medicines is restricted to ADMIN accounts only."
+          testID="mr-medicines-access-restricted"
+        />
+      </AppScreen>
+    );
+  }
 
   return (
     <AppScreen

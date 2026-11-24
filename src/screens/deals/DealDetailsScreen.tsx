@@ -234,6 +234,7 @@ export const DealDetailsScreen: React.FC = () => {
 
   return (
     <AppScreen
+      scrollable={false}
       headerProps={{
         title: 'Deal Agreement',
         subtitle: `Settled on ${formatFullDate(deal.dealDate)}`,

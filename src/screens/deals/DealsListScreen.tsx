@@ -85,6 +85,7 @@ export const DealsListScreen: React.FC = () => {
 
   const [activeTab, setActiveTab] = useState<StatusTab>('ALL');
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState<string>('');
   const [sortOption, setSortOption] = useState<SortOption>('date_desc');
   const [showSortModal, setShowSortModal] = useState<boolean>(false);
 
@@ -100,6 +101,7 @@ export const DealsListScreen: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
 
   const isMountedRef = useRef<boolean>(true);
+  const requestSeqRef = useRef<number>(0);
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -108,12 +110,25 @@ export const DealsListScreen: React.FC = () => {
     };
   }, []);
 
+  useEffect(() => {
+    if (!searchQuery.trim()) {
+      setDebouncedSearchQuery('');
+      return;
+    }
+    const timer = setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
   const fetchDeals = useCallback(
     async (showLoadingSpinner: boolean = true) => {
       if (!isAdmin) {
         setIsLoading(false);
         return;
       }
+
+      const requestSeq = ++requestSeqRef.current;
 
       if (showLoadingSpinner) {
         setIsLoading(true);
@@ -139,32 +154,32 @@ export const DealsListScreen: React.FC = () => {
           medicineId: filterMedicineId,
           mrId: filterMrId,
           status: activeTab,
-          search: searchQuery.trim() || undefined,
+          search: debouncedSearchQuery.trim() || undefined,
           sortBy,
           sortOrder,
           limit: 100,
         });
 
-        if (isMountedRef.current) {
+        if (isMountedRef.current && requestSeq === requestSeqRef.current) {
           setDeals(result.deals || []);
           if (result.summary) {
             setSummary(result.summary);
           }
         }
       } catch (err) {
-        if (isMountedRef.current) {
+        if (isMountedRef.current && requestSeq === requestSeqRef.current) {
           const msg =
             err instanceof Error ? err.message : 'Failed to load medicine deals.';
           setError(msg);
         }
       } finally {
-        if (isMountedRef.current) {
+        if (isMountedRef.current && requestSeq === requestSeqRef.current) {
           setIsLoading(false);
           setIsRefreshing(false);
         }
       }
     },
-    [filterMedicineId, filterMrId, activeTab, searchQuery, sortOption],
+    [isAdmin, filterMedicineId, filterMrId, activeTab, debouncedSearchQuery, sortOption],
   );
 
   useFocusEffect(

@@ -1,4 +1,4 @@
-import { apiClient } from './api-client';
+import { apiClient, UPLOAD_REQUEST_TIMEOUT_MS } from './api-client';
 
 export interface ExtractedSalt {
   name: string;
@@ -40,7 +40,10 @@ export interface PhotoInputItem {
 }
 
 export const ocrService = {
-  scanMedicinePhotos: async (photos: PhotoInputItem[]): Promise<ScanMedicineResult> => {
+  scanMedicinePhotos: async (
+    photos: PhotoInputItem[],
+    options?: { signal?: AbortSignal; timeoutMs?: number },
+  ): Promise<ScanMedicineResult> => {
     const payload = {
       images: photos.map((p) => ({
         uri: p.uri,
@@ -53,6 +56,10 @@ export const ocrService = {
     const response = await apiClient.post<ScanMedicineResult>(
       '/ocr/scan-medicine',
       payload,
+      {
+        signal: options?.signal,
+        timeoutMs: options?.timeoutMs ?? UPLOAD_REQUEST_TIMEOUT_MS,
+      },
     );
 
     return response;

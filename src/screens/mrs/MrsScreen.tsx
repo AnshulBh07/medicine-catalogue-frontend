@@ -94,6 +94,8 @@ export const MrsScreen: React.FC = () => {
 
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isMountedRef = useRef(true);
+  const skipInitialFocusRef = useRef(true);
+  const requestSeqRef = useRef(0);
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -103,7 +105,7 @@ export const MrsScreen: React.FC = () => {
     };
   }, []);
 
-  // Fetch MR list from server
+  // Fetch MR list from server with stale response sequencing guard
   const fetchMrs = useCallback(
     async (
       searchQuery: string = search,
@@ -111,6 +113,8 @@ export const MrsScreen: React.FC = () => {
       currentSortBy: MrSortField = sortBy,
       currentSortOrder: MrSortOrder = sortOrder,
     ) => {
+      const requestSeq = ++requestSeqRef.current;
+
       try {
         setErrorMessage(null);
         const params = new URLSearchParams();
@@ -130,8 +134,10 @@ export const MrsScreen: React.FC = () => {
         params.append('sortBy', currentSortBy);
         params.append('sortOrder', currentSortOrder);
 
-        const response = await apiClient.get<{ mrs: PublicMr[] }>(`/mrs?${params.toString()}`);
-        if (isMountedRef.current) {
+        const response = await apiClient.get<{ mrs: PublicMr[] }>(
+          `/mrs?${params.toString()}`,
+        );
+        if (isMountedRef.current && requestSeq === requestSeqRef.current) {
           if (response && Array.isArray(response.mrs)) {
             setMrs(response.mrs);
           } else {
@@ -139,13 +145,16 @@ export const MrsScreen: React.FC = () => {
           }
         }
       } catch (err: unknown) {
-        if (isMountedRef.current) {
+        if (isMountedRef.current && requestSeq === requestSeqRef.current) {
+          if ((err as { code?: string })?.code === 'REQUEST_CANCELLED') {
+            return;
+          }
           const msg = err instanceof Error ? err.message : 'Failed to load representatives';
           setErrorMessage(msg);
           setMrs([]);
         }
       } finally {
-        if (isMountedRef.current) {
+        if (isMountedRef.current && requestSeq === requestSeqRef.current) {
           setIsLoading(false);
           setRefreshing(false);
         }
@@ -154,26 +163,34 @@ export const MrsScreen: React.FC = () => {
     [search, filters, sortBy, sortOrder],
   );
 
-  // Initial load
+  // Initial load & filter/sort changes
   useEffect(() => {
-    fetchMrs(search, filters, sortBy, sortOrder);
+    void fetchMrs(search, filters, sortBy, sortOrder);
   }, [filters, sortBy, sortOrder]);
 
-  // Refresh on focus
+  // Refresh on subsequent focus (skip duplicate immediate mount focus)
   useEffect(() => {
     const unsubscribe = navigation.addListener?.('focus', () => {
-      fetchMrs();
+      if (skipInitialFocusRef.current) {
+        skipInitialFocusRef.current = false;
+        return;
+      }
+      void fetchMrs();
     });
     return unsubscribe;
   }, [navigation, fetchMrs]);
 
-  // Debounced search
+  // Debounced search (immediate restore when cleared)
   const handleSearchChange = (text: string) => {
     setSearch(text);
     if (searchTimer.current) clearTimeout(searchTimer.current);
+    if (!text.trim()) {
+      void fetchMrs('', filters, sortBy, sortOrder);
+      return;
+    }
     searchTimer.current = setTimeout(() => {
-      fetchMrs(text, filters, sortBy, sortOrder);
-    }, 200);
+      void fetchMrs(text, filters, sortBy, sortOrder);
+    }, 300);
   };
 
   const handleRefresh = () => {

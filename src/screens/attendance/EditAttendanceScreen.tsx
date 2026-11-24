@@ -187,6 +187,7 @@ export const EditAttendanceScreen: React.FC = () => {
 
   return (
     <AppScreen
+      scrollable={false}
       headerProps={{
         title: 'Edit Attendance',
         subtitle: `${userName} • ${dDay} ${monthName} ${dYear}`,

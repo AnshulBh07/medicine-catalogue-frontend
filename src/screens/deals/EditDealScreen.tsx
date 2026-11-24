@@ -59,6 +59,10 @@ export const EditDealScreen: React.FC = () => {
   }, []);
 
   const loadDeal = useCallback(async () => {
+    if (!isAdmin) {
+      setIsLoading(false);
+      return;
+    }
     setIsLoading(true);
     setError(null);
     try {
@@ -84,11 +88,15 @@ export const EditDealScreen: React.FC = () => {
         setIsLoading(false);
       }
     }
-  }, [dealId]);
+  }, [dealId, isAdmin]);
 
   useEffect(() => {
+    if (!isAdmin) {
+      setIsLoading(false);
+      return;
+    }
     void loadDeal();
-  }, [loadDeal]);
+  }, [isAdmin, loadDeal]);
 
   const validateAndSave = async () => {
     if (!deal) return;
@@ -186,6 +194,7 @@ export const EditDealScreen: React.FC = () => {
 
   return (
     <AppScreen
+      scrollable={false}
       headerProps={{
         title: 'Edit Medicine Deal',
         subtitle: `${deal.medicine.name} • ${deal.mr.name}`,

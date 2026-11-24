@@ -65,6 +65,7 @@ export const MyAccountScreen: React.FC = () => {
 
   return (
     <AppScreen
+      scrollable={false}
       headerProps={{
         title: 'My Account',
         subtitle: 'Profile and account details',

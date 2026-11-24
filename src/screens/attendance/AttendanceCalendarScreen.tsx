@@ -309,6 +309,7 @@ export const AttendanceCalendarScreen: React.FC = () => {
 
   return (
     <AppScreen
+      scrollable={false}
       headerProps={{
         title: 'Attendance Calendar',
         subtitle: `${user?.name ?? 'Employee'} • ${monthName} ${selectedYear}`,

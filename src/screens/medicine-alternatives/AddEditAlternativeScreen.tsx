@@ -17,10 +17,12 @@ import {
   AppScreen,
   Button,
   Card,
+  ErrorState,
   Icon,
   LoadingIndicator,
   SearchInput,
 } from '../../components';
+import { useAuth } from '../../features/auth';
 import { apiClient } from '../../services/api-client';
 import { medicineAlternativeService } from '../../services/medicineAlternativeService';
 import { borderRadius, colors, fontSizes, fontWeights, spacing } from '../../theme';
@@ -33,6 +35,7 @@ type AddEditAlternativeRouteProp = RouteProp<RootStackParamList, 'AddEditAlterna
 export const AddEditAlternativeScreen: React.FC = () => {
   const navigation = useNavigation<NavigationProp>();
   const route = useRoute<AddEditAlternativeRouteProp>();
+  const { isAdmin } = useAuth();
 
   const sourceMedicineId = route.params?.sourceMedicineId;
   const isEditMode = !!sourceMedicineId;
@@ -40,7 +43,7 @@ export const AddEditAlternativeScreen: React.FC = () => {
   // Form State
   const [sourceMedicine, setSourceMedicine] = useState<PublicMedicine | null>(null);
   const [selectedAlternatives, setSelectedAlternatives] = useState<PublicMedicine[]>([]);
-  const [isLoading, setIsLoading] = useState(isEditMode);
+  const [isLoading, setIsLoading] = useState(isEditMode && isAdmin);
   const [isSaving, setIsSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -52,16 +55,26 @@ export const AddEditAlternativeScreen: React.FC = () => {
   const [isPickerLoading, setIsPickerLoading] = useState(false);
 
   const isMountedRef = useRef(true);
+  const pickerRequestSeqRef = useRef(0);
+  const pickerAbortRef = useRef<AbortController | null>(null);
+  const pickerSearchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     isMountedRef.current = true;
     return () => {
       isMountedRef.current = false;
+      if (pickerSearchTimerRef.current) clearTimeout(pickerSearchTimerRef.current);
+      pickerAbortRef.current?.abort();
     };
   }, []);
 
-  // Fetch catalogue medicines for picker
+  // Fetch catalogue medicines for picker with stale response cancellation
   const loadCatalogueMedicines = useCallback(async (query = '') => {
+    const requestSeq = ++pickerRequestSeqRef.current;
+    pickerAbortRef.current?.abort();
+    const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    pickerAbortRef.current = controller;
+
     try {
       setIsPickerLoading(true);
       const params = new URLSearchParams();
@@ -71,14 +84,15 @@ export const AddEditAlternativeScreen: React.FC = () => {
       const queryString = params.toString() ? `?${params.toString()}` : '';
       const res = await apiClient.get<{ medicines: PublicMedicine[] }>(
         `/medicines${queryString}`,
+        controller ? { signal: controller.signal } : undefined,
       );
-      if (isMountedRef.current && res?.medicines) {
+      if (isMountedRef.current && requestSeq === pickerRequestSeqRef.current && res?.medicines) {
         setCatalogueMedicines(res.medicines);
       }
     } catch {
-      // Graceful fallback
+      // Graceful fallback (including aborted stale requests)
     } finally {
-      if (isMountedRef.current) {
+      if (isMountedRef.current && requestSeq === pickerRequestSeqRef.current) {
         setIsPickerLoading(false);
       }
     }
@@ -86,6 +100,11 @@ export const AddEditAlternativeScreen: React.FC = () => {
 
   // Load existing data in edit mode
   useEffect(() => {
+    if (!isAdmin) {
+      setIsLoading(false);
+      return;
+    }
+
     if (!sourceMedicineId) {
       if (route.params?.initialSourceMedicine) {
         setSourceMedicine(route.params.initialSourceMedicine);
@@ -269,6 +288,24 @@ export const AddEditAlternativeScreen: React.FC = () => {
     return comp || capitalizedForm || '';
   };
 
+  if (!isAdmin) {
+    return (
+      <AppScreen
+        headerProps={{
+          title: isEditMode ? 'Edit Alternatives' : 'Add Alternative',
+          showBack: true,
+          onBack: () => navigation.goBack(),
+        }}
+      >
+        <ErrorState
+          title="Access Restricted"
+          message="Managing medicine alternatives is restricted to ADMIN accounts only."
+          testID="alternatives-access-restricted"
+        />
+      </AppScreen>
+    );
+  }
+
   if (isLoading) {
     return (
       <AppScreen
@@ -285,6 +322,7 @@ export const AddEditAlternativeScreen: React.FC = () => {
 
   return (
     <AppScreen
+      scrollable={false}
       headerProps={{
         title: isEditMode ? 'Edit Alternatives' : 'Add Alternative',
         subtitle: 'Configure approved replacements',
@@ -474,7 +512,16 @@ export const AddEditAlternativeScreen: React.FC = () => {
                 value={pickerSearch}
                 onChangeText={(t) => {
                   setPickerSearch(t);
-                  void loadCatalogueMedicines(t);
+                  if (pickerSearchTimerRef.current) {
+                    clearTimeout(pickerSearchTimerRef.current);
+                  }
+                  if (!t.trim()) {
+                    void loadCatalogueMedicines('');
+                    return;
+                  }
+                  pickerSearchTimerRef.current = setTimeout(() => {
+                    void loadCatalogueMedicines(t);
+                  }, 300);
                 }}
                 placeholder="Search medicine name..."
                 testID="picker-search-input"

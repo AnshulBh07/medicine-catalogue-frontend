@@ -1,18 +1,67 @@
 import * as Location from 'expo-location';
 import { storage } from '../lib/storage';
 
+export type LocationPermissionStatus =
+  | 'granted'
+  | 'denied'
+  | 'permanently_denied'
+  | 'undetermined'
+  | 'unavailable';
+
 export interface ResolvedLocation {
   latitude: number;
   longitude: number;
   locationName: string;
   isFallback: boolean;
+  permissionStatus?: LocationPermissionStatus;
 }
+
+export interface ResolveLocationOptions {
+  requestPermission?: boolean;
+  timeoutMs?: number;
+}
+
+export const LOCATION_TIMEOUT_MS = 8000;
 
 export const DEFAULT_LOCATION = {
   latitude: 28.8527,
   longitude: 77.0928,
   locationName: 'Narela, Delhi',
 };
+
+function mapExpoPermissionToStatus(perm: {
+  status?: string;
+  canAskAgain?: boolean;
+}): LocationPermissionStatus {
+  if (perm.status === 'granted') return 'granted';
+  if (perm.status === 'undetermined') return 'undetermined';
+  if (perm.canAskAgain === false) return 'permanently_denied';
+  return 'denied';
+}
+
+async function getCurrentPositionWithTimeout(
+  timeoutMs: number = LOCATION_TIMEOUT_MS,
+): Promise<Location.LocationObject> {
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      reject(new Error('Location request timed out'));
+    }, timeoutMs);
+  });
+
+  try {
+    return await Promise.race([
+      Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+      }),
+      timeoutPromise,
+    ]);
+  } finally {
+    if (timer !== null) {
+      clearTimeout(timer);
+    }
+  }
+}
 
 function formatGeocodedAddress(address?: Location.LocationGeocodedAddress | null): string {
   if (!address) {
@@ -48,46 +97,75 @@ function formatGeocodedAddress(address?: Location.LocationGeocodedAddress | null
   return 'New Delhi';
 }
 
-export async function requestLocationPermission(): Promise<boolean> {
+export async function getLocationPermissionStatus(): Promise<LocationPermissionStatus> {
+  try {
+    const current = await Location.getForegroundPermissionsAsync();
+    return mapExpoPermissionToStatus(current);
+  } catch {
+    return 'unavailable';
+  }
+}
+
+export async function requestLocationPermissionWithStatus(): Promise<{
+  granted: boolean;
+  status: LocationPermissionStatus;
+}> {
   try {
     const current = await Location.getForegroundPermissionsAsync();
     if (current.status === 'granted') {
-      return true;
+      return { granted: true, status: 'granted' };
     }
-    if (!current.canAskAgain) {
-      return false;
+    if (current.canAskAgain === false) {
+      return { granted: false, status: 'permanently_denied' };
     }
     const res = await Location.requestForegroundPermissionsAsync();
-    return res.status === 'granted';
+    const mapped = mapExpoPermissionToStatus(res);
+    return { granted: mapped === 'granted', status: mapped };
   } catch {
-    return false;
+    return { granted: false, status: 'unavailable' };
   }
+}
+
+export async function requestLocationPermission(): Promise<boolean> {
+  const { granted } = await requestLocationPermissionWithStatus();
+  return granted;
 }
 
 /**
  * Resolves location following the strict priority:
- * 1. Fresh device GPS location if permission already granted (does not repeatedly prompt).
+ * 1. Fresh device GPS location if permission granted (or requested when explicitly opted-in).
  * 2. Last successfully saved location from local storage.
  * 3. Default fallback: Narela, Delhi (28.8527, 77.0928).
  */
-export async function resolveLocation(): Promise<ResolvedLocation> {
+export async function resolveLocation(
+  options: ResolveLocationOptions = {},
+): Promise<ResolvedLocation> {
+  const { requestPermission = false, timeoutMs = LOCATION_TIMEOUT_MS } = options;
+  let permissionStatus: LocationPermissionStatus = 'unavailable';
+
   try {
     let isPermissionGranted = false;
 
     try {
-      // Check existing permission status without triggering repeated prompts
+      // Check existing permission status without triggering repeated prompts on startup
       const currentPerm = await Location.getForegroundPermissionsAsync();
-      isPermissionGranted = currentPerm.status === 'granted';
+      permissionStatus = mapExpoPermissionToStatus(currentPerm);
+      isPermissionGranted = permissionStatus === 'granted';
+
+      if (!isPermissionGranted && requestPermission && currentPerm.canAskAgain !== false) {
+        const requested = await Location.requestForegroundPermissionsAsync();
+        permissionStatus = mapExpoPermissionToStatus(requested);
+        isPermissionGranted = permissionStatus === 'granted';
+      }
     } catch {
       // Permission API unavailable or error in environment
       isPermissionGranted = false;
+      permissionStatus = 'unavailable';
     }
 
     if (isPermissionGranted) {
       try {
-        const position = await Location.getCurrentPositionAsync({
-          accuracy: Location.Accuracy.Balanced,
-        });
+        const position = await getCurrentPositionWithTimeout(timeoutMs);
 
         const latitude = position.coords.latitude;
         const longitude = position.coords.longitude;
@@ -107,6 +185,7 @@ export async function resolveLocation(): Promise<ResolvedLocation> {
           longitude,
           locationName,
           isFallback: false,
+          permissionStatus: 'granted',
         };
 
         // Persist fresh location
@@ -119,7 +198,7 @@ export async function resolveLocation(): Promise<ResolvedLocation> {
 
         return resolved;
       } catch {
-        // GPS retrieval failed; continue to stored fallback
+        // GPS retrieval failed or timed out; continue to stored fallback
       }
     }
   } catch {
@@ -141,6 +220,7 @@ export async function resolveLocation(): Promise<ResolvedLocation> {
         longitude: saved.longitude,
         locationName: saved.locationName || 'New Delhi',
         isFallback: false,
+        permissionStatus,
       };
     }
   } catch {
@@ -153,5 +233,6 @@ export async function resolveLocation(): Promise<ResolvedLocation> {
     longitude: DEFAULT_LOCATION.longitude,
     locationName: DEFAULT_LOCATION.locationName,
     isFallback: true,
+    permissionStatus,
   };
 }

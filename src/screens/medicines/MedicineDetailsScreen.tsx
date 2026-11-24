@@ -285,13 +285,20 @@ export const MedicineDetailsScreen: React.FC = () => {
     }
   }, [id, isAdmin]);
 
+  const skipInitialFocusFetchRef = React.useRef(true);
+
   useEffect(() => {
-    fetchMedicineDetails();
+    skipInitialFocusFetchRef.current = true;
+    void fetchMedicineDetails();
   }, [fetchMedicineDetails]);
 
   useEffect(() => {
     const unsubscribe = navigation.addListener?.('focus', () => {
-      fetchMedicineDetails();
+      if (skipInitialFocusFetchRef.current) {
+        skipInitialFocusFetchRef.current = false;
+        return;
+      }
+      void fetchMedicineDetails();
     });
     return unsubscribe;
   }, [navigation, fetchMedicineDetails]);
@@ -340,13 +347,16 @@ export const MedicineDetailsScreen: React.FC = () => {
 
   return (
     <AppScreen
+      scrollable={false}
       headerProps={{
         title: medicine.name,
         subtitle: `${medicine.form} • ${medicine.packQuantity} ${medicine.packUnit.toLowerCase()}`,
         showBack: true,
         onBack: () => navigation.goBack(),
-        rightIcon: 'edit',
-        onRightPress: () => navigation.navigate('EditMedicine', { id: medicine.id }),
+        rightIcon: isAdmin ? 'edit' : undefined,
+        onRightPress: isAdmin
+          ? () => navigation.navigate('EditMedicine', { id: medicine.id })
+          : undefined,
       }}
     >
       <ScrollView
